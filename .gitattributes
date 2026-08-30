@@ -1,4 +1,9 @@
 * text=auto eol=lf
+
 /.github export-ignore
+/builds export-ignore
+/tests export-ignore
+/box.json export-ignore
+/phpunit.xml.dist export-ignore
 CONTRIBUTING.md export-ignore
 CHANGELOG.md export-ignore

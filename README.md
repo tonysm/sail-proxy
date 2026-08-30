@@ -1,42 +1,83 @@
-<p align="center">
-    <img title="Laravel Zero" height="100" src="https://raw.githubusercontent.com/laravel-zero/docs/master/images/logo/laravel-zero-readme.png" alt="Laravel Zero Logo" />
-</p>
+# Sail Proxy
 
-<p align="center">
-  <a href="https://github.com/laravel-zero/framework/actions"><img src="https://github.com/laravel-zero/laravel-zero/actions/workflows/tests.yml/badge.svg" alt="Build Status" /></a>
-  <a href="https://packagist.org/packages/laravel-zero/framework"><img src="https://img.shields.io/packagist/dt/laravel-zero/framework.svg" alt="Total Downloads" /></a>
-  <a href="https://packagist.org/packages/laravel-zero/framework"><img src="https://img.shields.io/packagist/v/laravel-zero/framework.svg?label=stable" alt="Latest Stable Version" /></a>
-  <a href="https://packagist.org/packages/laravel-zero/framework"><img src="https://img.shields.io/packagist/l/laravel-zero/framework.svg" alt="License" /></a>
-  <a href="https://youtube.com/@nunomaduro?sub_confirmation=1"><img alt="YouTube Channel Subscribers" src="https://img.shields.io/youtube/channel/subscribers/UCO_hYZF2gb_CyG5sA7ArlGg?style=flat&label=youtube&color=brightgreen"></a>
-</p>
+Serve your local [Laravel Sail](https://laravel.com/docs/sail) apps on local hostnames — `http://myapp.localhost` instead of `http://localhost:8080` — and run as many of them at once as you like side-by-side.
 
-Laravel Zero was created by [Nuno Maduro](https://github.com/nunomaduro) and [Owen Voke](https://github.com/owenvoke), and is a micro-framework that provides an elegant starting point for your console application. It is an **unofficial** and customized version of Laravel, optimized for building command-line applications.
+It wires up two containers:
 
-- Built on top of the [Laravel](https://laravel.com) components.
-- Optional installation of Laravel [Eloquent](https://laravel-zero.com/docs/database/), Laravel [Logging](https://laravel-zero.com/docs/logging/) and many others.
-- Supports interactive [menus](https://laravel-zero.com/docs/build-interactive-menus/) and [desktop notifications](https://laravel-zero.com/docs/send-desktop-notifications/) on Linux, Windows & MacOS.
-- Ships with a [Scheduler](https://laravel-zero.com/docs/task-scheduling/) and  a [Standalone Compiler](https://laravel-zero.com/docs/distribute-as-a-single-executable-binary/).
-- Integration with [Collision](https://github.com/nunomaduro/collision) - Beautiful error reporting
-- Follow the creator Nuno Maduro:
-    - YouTube: **[youtube.com/@nunomaduro](https://www.youtube.com/@nunomaduro)** — Videos every weekday
-    - Twitch: **[twitch.tv/enunomaduro](https://www.twitch.tv/enunomaduro)** — Streams (almost) every weekday
-    - Twitter / X: **[x.com/enunomaduro](https://x.com/enunomaduro)**
-    - LinkedIn: **[linkedin.com/in/nunomaduro](https://www.linkedin.com/in/nunomaduro)**
-    - Instagram: **[instagram.com/enunomaduro](https://www.instagram.com/enunomaduro)**
-    - Tiktok: **[tiktok.com/@enunomaduro](https://www.tiktok.com/@enunomaduro)**
+- **`sail-proxy`** — [kamal-proxy](https://github.com/basecamp/kamal-proxy), which owns port 80 and routes each hostname to the right app container.
+- **`sail-dns`** — dnsmasq, which resolves every `*.localhost` name to the proxy.
 
-------
+Your app containers join a shared `sail-proxy` network, drop their host port bindings, and get registered with the proxy by hostname.
 
-## Documentation
+## Requirements
 
-For full documentation, visit [laravel-zero.com](https://laravel-zero.com/).
+Just Docker.
 
-## Support the development
-**Do you like this project? Support it by donating**
+## Install
 
-- PayPal: [Donate](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=66BYDWAT92N6L)
-- Patreon: [Donate](https://www.patreon.com/nunomaduro)
+```bash
+composer global require tonysm/sail-proxy
+```
 
-## License
+Then `sail-proxy` is available everywhere.
 
-Laravel Zero is an open-source software licensed under the MIT license.
+## Usage
+
+Start the proxy once, then configure each app.
+
+### `sail-proxy install`
+
+Creates the `sail-proxy` network and starts the proxy and DNS containers. Run this once per machine; it is safe to re-run.
+
+### `sail-proxy uninstall`
+
+Removes everything `install` created: the `sail-proxy` and `sail-dns` containers, the `sail-proxy` network, and the `sail-proxy` volume that holds the proxy's registrations. Asks first unless you pass `--force`.
+
+Any app containers still attached to the network are disconnected so it can be removed. Project override files are left alone — the command lists the projects it found so you can delete their `compose.override.yaml` yourself, since a project that keeps one will fail to start once the network is gone.
+
+### `sail-proxy config`
+
+Run this from a Sail project directory. It writes a `compose.override.yaml` that:
+
+- clears the fixed `container_name` on every service, so several projects can run side by side (we need this since they all join the same network);
+- clears every host port binding, so nothing fights over port 80;
+- puts the app service on the `sail-proxy` network and points it at the DNS container.
+
+It then restarts the project and offers to register it with the proxy.
+
+| Option | |
+|---|---|
+| `--takeout` | also attach the app to [Takeout](https://github.com/tighten/takeout)'s network, so its MySQL/Redis/etc. containers are reachable by name |
+| `--host=` | the hostname to serve on, skipping the prompt |
+| `--force` | overwrite an existing `compose.override.yaml` without asking |
+
+Give both `--host` and `--force` to run it unattended.
+
+The app service is detected from `APP_SERVICE` in your `.env`, falling back to `laravel.test`.
+
+### `sail-proxy register [container] [hostname] [port]`
+
+Point a hostname at any running container, Sail or not. Prompts for anything you leave out.
+
+```bash
+sail-proxy register my-container myapp.localhost 80
+```
+
+### `sail-proxy unregister [app]`
+
+Stop serving an app. Prompts with the registered apps if you don't name one.
+
+## Configuration
+
+Every default — network name, subnet, container names, images, the proxy IPs, the deploy timeout, the TLD — is set in `config/proxy.php` and overridable by environment variable. See that file for the full list.
+
+## Using it with Takeout
+
+[Takeout](https://github.com/tighten/takeout) manages its own `takeout` Docker network. Sail Proxy never creates or modifies it — `--takeout` only attaches your app to it:
+
+```bash
+takeout enable mysql
+sail-proxy config --takeout
+```
+
+Your app can then reach the Takeout containers by name (`mysql`, `redis`, …) while still being served on its `.localhost` hostname.
