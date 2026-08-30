@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish the release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      # The archive is committed, and Composer installs it straight from the
+      # tag, so a stale build ships silently. Make that a failed release
+      # instead: the version baked in at build time has to match the tag.
+      - name: Check the committed archive was rebuilt for this tag
+        run: |
+          chmod +x builds/sail-proxy
+          BUILT="$(./builds/sail-proxy --version)"
+          echo "archive reports: $BUILT"
+          if ! grep -qF "${{ github.ref_name }}" <<< "$BUILT"; then
+            echo "::error::builds/sail-proxy reports '$BUILT' but the tag is '${{ github.ref_name }}'."
+            echo "::error::Run 'php sail-proxy app:build sail-proxy --build-version=${{ github.ref_name }}' and commit it before tagging."
+            exit 1
+          fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: builds/sail-proxy
+          generate_release_notes: true

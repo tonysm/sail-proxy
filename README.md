@@ -21,6 +21,15 @@ composer global require tonysm/sail-proxy
 
 Then `sail-proxy` is available everywhere.
 
+That installs a single self-contained archive — no dependencies are added to your global Composer setup, so it can't conflict with anything else you have installed.
+
+Or, if you'd rather not go through Composer, download the same binary from the [latest release](https://github.com/tonysm/sail-proxy/releases/latest):
+
+```bash
+curl -L https://github.com/tonysm/sail-proxy/releases/latest/download/sail-proxy -o ~/.local/bin/sail-proxy
+chmod +x ~/.local/bin/sail-proxy
+```
+
 ## Usage
 
 Start the proxy once, then configure each app.
@@ -69,7 +78,31 @@ Stop serving an app. Prompts with the registered apps if you don't name one.
 
 ## Configuration
 
-Every default — network name, subnet, container names, images, the proxy IPs, the deploy timeout, the TLD — is set in `config/proxy.php` and overridable by environment variable. See that file for the full list.
+Every default can be overridden with an environment variable. These are read from the real environment, not from a `.env` file:
+
+```bash
+SAIL_PROXY_TLD=test sail-proxy register my-container myapp.test
+```
+
+| Variable | Default |
+|---|---|
+| `SAIL_PROXY_NETWORK` | `sail-proxy` |
+| `SAIL_PROXY_SUBNET` | `172.42.0.0/16` |
+| `SAIL_PROXY_NAME` | `sail-proxy` |
+| `SAIL_PROXY_IP` | `172.42.255.254` |
+| `SAIL_PROXY_IMAGE` | `basecamp/kamal-proxy:once-01` |
+| `SAIL_PROXY_METRICS_PORT` | `9000` |
+| `SAIL_PROXY_DNS_NAME` | `sail-dns` |
+| `SAIL_PROXY_DNS_IP` | `172.42.255.253` |
+| `SAIL_PROXY_DNS_IMAGE` | `drpsychick/dnsmasq` |
+| `SAIL_PROXY_DNS_UPSTREAM` | `8.8.8.8` |
+| `SAIL_PROXY_TAKEOUT_NETWORK` | `takeout` |
+| `SAIL_PROXY_DEPLOY_TIMEOUT` | `120s` |
+| `SAIL_PROXY_OVERRIDE_FILE` | `compose.override.yaml` |
+| `SAIL_PROXY_DEFAULT_SERVICE` | `laravel.test` |
+| `SAIL_PROXY_TLD` | `localhost` |
+
+Set them per-command as above, or export them from your shell profile to change the defaults for good. Note that the network name must not be `sail`: Sail's own compose file already defines a network by that name.
 
 ## Using it with Takeout
 
