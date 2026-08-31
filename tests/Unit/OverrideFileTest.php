@@ -31,13 +31,13 @@ it('renders an override for every service, wiring only the app service', functio
     YAML);
 });
 
-it('gives the app service a network alias for the hostname it is served on', function () {
+it('gives the app service network aliases for the hostnames it answers to', function () {
     $yaml = (new OverrideFile)->render(
         services: ['laravel.test'],
         appService: 'laravel.test',
         appNetworks: ['sail', 'sail-proxy'],
         externalNetworks: ['sail-proxy'],
-        aliases: ['sail-proxy' => ['myapp.localhost']],
+        aliases: ['sail-proxy' => ['myapp.localhost', 'myapp.internal']],
     );
 
     // Aliases can only be expressed by the map form, so the networks the
@@ -53,6 +53,7 @@ it('gives the app service a network alias for the hostname it is served on', fun
           sail-proxy:
             aliases:
               - myapp.localhost
+              - myapp.internal
     networks:
       sail-proxy:
         external: true
@@ -119,7 +120,7 @@ it('emits reset tags that docker compose understands', function () {
         appService: 'laravel.test',
         appNetworks: ['sail-proxy'],
         externalNetworks: ['sail-proxy'],
-        aliases: ['sail-proxy' => ['myapp.localhost']],
+        aliases: ['sail-proxy' => ['myapp.localhost', 'myapp.internal']],
     );
 
     $parsed = Yaml::parse($yaml, Yaml::PARSE_CUSTOM_TAGS);
@@ -130,5 +131,5 @@ it('emits reset tags that docker compose understands', function () {
         ->and($service['container_name']->getValue())->toBeNull()
         ->and($service['ports']->getTag())->toBe('reset')
         ->and($service['ports']->getValue())->toBe([])
-        ->and($service['networks']['sail-proxy']['aliases'])->toBe(['myapp.localhost']);
+        ->and($service['networks']['sail-proxy']['aliases'])->toBe(['myapp.localhost', 'myapp.internal']);
 });

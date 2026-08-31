@@ -45,6 +45,10 @@ Container-to-container resolution is Docker's embedded resolver answering that a
 is no DNS container. Host-to-container resolution is the OS sending `*.localhost` to
 `127.0.0.1`, where the proxy publishes port 80.
 
+Each app gets **two** aliases -- `myapp.localhost` and `myapp.internal` -- because libcurl will
+not resolve the first from inside a container. See the invariant below and the README's
+"Container-to-container requests".
+
 Everything configurable lives in `config/proxy.php`, each key backed by a `SAIL_PROXY_*`
 env var read from the real environment (not a `.env`).
 
@@ -64,6 +68,13 @@ env var read from the real environment (not a `.env`).
 - **`config` has to settle the hostname before it writes the override**, because the
   hostname goes in as a network alias. Prompting for it at registration time — after the
   file is written — would be too late.
+- **Aliases come in pairs, and the `.localhost` one is inert for libcurl.** libcurl resolves
+  any `.localhost` name to `127.0.0.1` itself, so from inside a container that alias is never
+  reached -- the request loops back to the caller. `ConfigCommand::containerHostname()` adds a
+  second alias on `proxy.container_tld` for real container-to-container traffic. It keys off
+  the literal `.localhost` suffix rather than `proxy.tld`, since that is what libcurl
+  special-cases: a user running `SAIL_PROXY_TLD=test` already has a working name and gets no
+  redundant second alias.
 - **Aliases force the map form of `networks:`.** A plain list cannot carry them, so
   `OverrideFile` switches to `network: {aliases: [...]}` and has to bring the service's
   other networks along as keys with a null value. It keeps the list form when there is no

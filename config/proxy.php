@@ -68,4 +68,18 @@ return [
 
     'tld' => env('SAIL_PROXY_TLD', 'localhost'),
 
+    /*
+    | The suffix apps use to reach each other from inside a container.
+    |
+    | They need a second name because libcurl resolves anything ending in
+    | ".localhost" to 127.0.0.1 itself, per RFC 6761, without ever asking a
+    | resolver -- so a request to "myapp.localhost" from inside a container
+    | loops back to the calling container instead of reaching the app. That
+    | covers curl, Guzzle and Laravel's HTTP client. No DNS-side arrangement
+    | can change it, so "config" writes a second alias on a suffix libcurl
+    | leaves alone.
+    */
+
+    'container_tld' => env('SAIL_PROXY_CONTAINER_TLD', 'internal'),
+
 ];

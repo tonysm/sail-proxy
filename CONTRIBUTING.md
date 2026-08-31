@@ -60,12 +60,22 @@ Worth knowing before changing the related code:
   resolver's *upstream* — visible as `# ExtServers: [...]` in the file. This is why dropping
   it in favour of network aliases cost no service discovery, and why a dead address there
   used to break every external lookup in the container.
-- **`.localhost` is not special-cased on the path we rely on.** glibc's `files dns` sends
-  `foo.localhost` to the resolver rather than synthesising loopback, and Docker's embedded
-  resolver answers a `.localhost` alias from its own table before forwarding upstream. Both
-  verified directly; re-check by attaching two aliases to one container and comparing which
-  IP comes back, not by stopping the resolver (a dead upstream hangs the AAAA lookup and
-  times out the whole query).
+- **`.localhost` is not special-cased in the *resolver*, but it is in libcurl.** glibc's
+  `files dns` sends `foo.localhost` to the resolver rather than synthesising loopback, and
+  Docker's embedded resolver answers a `.localhost` alias from its own table before
+  forwarding upstream. Both verified directly; re-check by attaching two aliases to one
+  container and comparing which IP comes back, not by stopping the resolver (a dead upstream
+  hangs the AAAA lookup and times out the whole query).
+
+  **libcurl is the exception, and it is the one that matters.** It resolves `*.localhost` to
+  `127.0.0.1` on its own, above the resolver, so nothing you put in DNS or `/etc/hosts`
+  reaches it -- `extra_hosts` loses too. Inside a container that lands on the container's own
+  web server. This is why every app gets a second alias on `proxy.container_tld`.
+
+  It is not a regression we introduced: it arrived with Ubuntu 24.04. `sail-8.2`
+  (22.04, curl 7.81) reaches the proxy and returns 200; `sail-8.1`, `-8.4` and `-8.5`
+  (24.04, curl 8.5) all loop back. Note it tracks the base image, not the PHP version.
+  `CURLOPT_RESOLVE` does override it, but only per-request from inside app code.
 - **The compose `!reset` tags are emitted as `TaggedValue`.** `!reset null` is the documented Compose form; an empty sequence needs `Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE` or it dumps as `{}`, an empty map. `OverrideFileTest` pins the output.
 
 ## Distribution

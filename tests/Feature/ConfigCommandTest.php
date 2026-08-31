@@ -88,7 +88,7 @@ it('writes the override and restarts the project', function () {
     expect($override)
         ->toContain('container_name: !reset null')
         ->toContain('ports: !reset []')
-        ->toContain("        aliases:\n          - myapp.localhost")
+        ->toContain("        aliases:\n          - myapp.localhost\n          - myapp.internal")
         ->toContain("networks:\n  sail-proxy:\n    external: true")
         ->not->toContain('dns:')
         ->not->toContain('takeout');
@@ -106,7 +106,7 @@ it('attaches the app to the takeout network with --takeout', function () {
         ->assertExitCode(0);
 
     expect(file_get_contents($this->project.'/compose.override.yaml'))
-        ->toContain("      sail-proxy:\n        aliases:\n          - myapp.localhost\n      takeout: null")
+        ->toContain("      sail-proxy:\n        aliases:\n          - myapp.localhost\n          - myapp.internal\n      takeout: null")
         ->toContain("  takeout:\n    external: true");
 });
 
@@ -238,6 +238,52 @@ it('does not accumulate networks across runs', function () {
 
     expect(file_get_contents($this->project.'/compose.override.yaml'))
         ->not->toContain('takeout');
+});
+
+it('explains the container hostname after registering', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses([
+        ...project(networks: []),
+        'docker ps --format*' => Process::result('sail-proxy'),
+        'docker compose ps --format*' => Process::result('proj-laravel.test-1'),
+    ]);
+
+    $this->artisan('config', ['--host' => 'myapp.localhost', '--force' => true])
+        ->expectsOutputToContain('From other containers, reach this app at http://myapp.internal')
+        ->expectsOutputToContain('sail-proxy#container-to-container-requests')
+        ->assertExitCode(0);
+});
+
+it('explains the container hostname even when the proxy is not running', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses([...project(networks: []), 'docker ps*' => Process::result('')]);
+
+    // The override is written either way, so the second name applies either way.
+    $this->artisan('config', ['--host' => 'myapp.localhost', '--force' => true])
+        ->expectsOutputToContain('From other containers, reach this app at http://myapp.internal')
+        ->assertExitCode(0);
+});
+
+it('adds no second alias when the hostname is not a localhost one', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses([
+        ...project(networks: []),
+        'docker ps --format*' => Process::result('sail-proxy'),
+        'docker compose ps --format*' => Process::result('proj-laravel.test-1'),
+    ]);
+
+    // libcurl only special-cases .localhost, so this hostname already works
+    // from inside a container and needs no companion.
+    $this->artisan('config', ['--host' => 'myapp.test', '--force' => true])
+        ->doesntExpectOutputToContain('From other containers')
+        ->assertExitCode(0);
+
+    expect(file_get_contents($this->project.'/compose.override.yaml'))
+        ->toContain("        aliases:\n          - myapp.test\n")
+        ->not->toContain('myapp.test.internal');
 });
 
 it('writes no alias when registration is declined', function () {

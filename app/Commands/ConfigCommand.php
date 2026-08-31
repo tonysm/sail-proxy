@@ -92,9 +92,13 @@ class ConfigCommand extends Command
         // registration time the way it used to be.
         $hostname = $this->hostname($compose, $appService);
 
-        $aliases = $hostname === null
-            ? []
-            : [config('proxy.network.name') => [$hostname]];
+        // Containers get a second name on a suffix libcurl will actually
+        // resolve. See containerHostname().
+        $containerHostname = $hostname === null ? null : $this->containerHostname($hostname);
+
+        $aliases = $hostname === null ? [] : [
+            config('proxy.network.name') => array_values(array_filter([$hostname, $containerHostname])),
+        ];
 
         file_put_contents($path, $override->render($services, $appService, $networks, $external, $aliases));
 
@@ -111,10 +115,56 @@ class ConfigCommand extends Command
             $this->newLine();
             $this->warn("Proxy is not running. Run 'sail-proxy install' first, then 'sail-proxy register'.");
 
+            $this->reportContainerHostname($containerHostname);
+
             return self::SUCCESS;
         }
 
-        return $this->register($compose, $appService, $hostname);
+        $registered = $this->register($compose, $appService, $hostname);
+
+        if ($registered === self::SUCCESS) {
+            $this->reportContainerHostname($containerHostname);
+        }
+
+        return $registered;
+    }
+
+    /**
+     * The name other containers use to reach this app, if it needs one.
+     *
+     * libcurl resolves any ".localhost" name to 127.0.0.1 on its own, without
+     * consulting a resolver, so the hostname we serve on is unreachable from
+     * inside a container no matter what we put in DNS. A second alias on a
+     * suffix libcurl leaves alone is the only way around it. A hostname that
+     * does not end in ".localhost" already works and gets no second name.
+     */
+    protected function containerHostname(string $hostname): ?string
+    {
+        if (! str_ends_with($hostname, '.localhost')) {
+            return null;
+        }
+
+        return substr($hostname, 0, -strlen('.localhost')).'.'.config('proxy.container_tld');
+    }
+
+    /**
+     * Explain the second hostname, which is otherwise a surprise.
+     */
+    protected function reportContainerHostname(?string $containerHostname): void
+    {
+        if ($containerHostname === null) {
+            return;
+        }
+
+        $this->newLine();
+        $this->line("  From other containers, reach this app at http://{$containerHostname}");
+        $this->newLine();
+        $this->line("  Anything built on libcurl - including Guzzle and Laravel's HTTP client -");
+        $this->line('  resolves *.localhost to 127.0.0.1 without asking DNS, so the .localhost');
+        $this->line('  name would loop back to the calling container instead.');
+        $this->newLine();
+        $this->line('  https://github.com/tonysm/sail-proxy#container-to-container-requests');
+        $this->newLine();
     }
 
     /**
