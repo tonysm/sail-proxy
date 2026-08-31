@@ -84,11 +84,11 @@ class RegisterCommand extends Command
      */
     protected function selectableContainers(Docker $docker): array
     {
-        $ours = [config('proxy.proxy.name'), config('proxy.dns.name')];
+        $proxy = config('proxy.proxy.name');
 
         $containers = array_values(array_filter(
             $docker->containerNames(),
-            fn (string $name): bool => ! in_array($name, $ours, strict: true),
+            fn (string $name): bool => $name !== $proxy,
         ));
 
         sort($containers);

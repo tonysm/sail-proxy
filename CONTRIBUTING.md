@@ -55,6 +55,17 @@ Worth knowing before changing the related code:
 - **`config` reads the project with `-f <base compose file>`**, never the merged config. Reading the merged config feeds our own previous override back in, so each run re-adds the networks the last one wrote and eventually emits a file referencing an undeclared network.
 - **Restart projects with `./vendor/bin/sail`, not bare `docker compose`.** Sail's script exports `WWWUSER`/`WWWGROUP`; without them the container runs as the wrong UID and the app fails on a readonly SQLite file. `DockerCompose::command()` handles this.
 - **`docker rm -f` exits 0 for a container that does not exist**, so existence has to be checked separately before reporting that something was removed.
+- **The app service's `dns:` entry never replaced Docker's resolver.** On a user-defined
+  network `/etc/resolv.conf` always points at `127.0.0.11`, and a `dns:` value becomes that
+  resolver's *upstream* — visible as `# ExtServers: [...]` in the file. This is why dropping
+  it in favour of network aliases cost no service discovery, and why a dead address there
+  used to break every external lookup in the container.
+- **`.localhost` is not special-cased on the path we rely on.** glibc's `files dns` sends
+  `foo.localhost` to the resolver rather than synthesising loopback, and Docker's embedded
+  resolver answers a `.localhost` alias from its own table before forwarding upstream. Both
+  verified directly; re-check by attaching two aliases to one container and comparing which
+  IP comes back, not by stopping the resolver (a dead upstream hangs the AAAA lookup and
+  times out the whole query).
 - **The compose `!reset` tags are emitted as `TaggedValue`.** `!reset null` is the documented Compose form; an empty sequence needs `Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE` or it dumps as `{}`, an empty map. `OverrideFileTest` pins the output.
 
 ## Distribution

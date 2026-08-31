@@ -69,11 +69,11 @@ it('honours APP_SERVICE from the env file', function () {
         'docker ps*' => Process::result(''),
     ]);
 
-    $this->artisan('config', ['--force' => true])->assertExitCode(0);
+    $this->artisan('config', ['--host' => 'myapp.localhost', '--force' => true])->assertExitCode(0);
 
     expect(file_get_contents($this->project.'/compose.override.yaml'))
         ->toContain('my.app:')
-        ->toContain('- sail-proxy');
+        ->toContain('sail-proxy:');
 });
 
 it('writes the override and restarts the project', function () {
@@ -81,15 +81,16 @@ it('writes the override and restarts the project', function () {
 
     fakeProcesses([...project(networks: []), 'docker ps*' => Process::result('')]);
 
-    $this->artisan('config', ['--force' => true])->assertExitCode(0);
+    $this->artisan('config', ['--host' => 'myapp.localhost', '--force' => true])->assertExitCode(0);
 
     $override = file_get_contents($this->project.'/compose.override.yaml');
 
     expect($override)
         ->toContain('container_name: !reset null')
         ->toContain('ports: !reset []')
-        ->toContain('- 172.42.255.253')
+        ->toContain("        aliases:\n          - myapp.localhost")
         ->toContain("networks:\n  sail-proxy:\n    external: true")
+        ->not->toContain('dns:')
         ->not->toContain('takeout');
 
     assertRanProcess('docker compose down');
@@ -101,10 +102,11 @@ it('attaches the app to the takeout network with --takeout', function () {
 
     fakeProcesses([...project(networks: []), 'docker ps*' => Process::result('')]);
 
-    $this->artisan('config', ['--takeout' => true, '--force' => true])->assertExitCode(0);
+    $this->artisan('config', ['--takeout' => true, '--host' => 'myapp.localhost', '--force' => true])
+        ->assertExitCode(0);
 
     expect(file_get_contents($this->project.'/compose.override.yaml'))
-        ->toContain("      - sail-proxy\n      - takeout")
+        ->toContain("      sail-proxy:\n        aliases:\n          - myapp.localhost\n      takeout: null")
         ->toContain("  takeout:\n    external: true");
 });
 
@@ -129,7 +131,8 @@ it('never creates the takeout network itself', function () {
 
     fakeProcesses([...project(networks: []), 'docker ps*' => Process::result('')]);
 
-    $this->artisan('config', ['--takeout' => true, '--force' => true])->assertExitCode(0);
+    $this->artisan('config', ['--takeout' => true, '--host' => 'myapp.localhost', '--force' => true])
+        ->assertExitCode(0);
 
     assertDidntRunProcess('docker network create*takeout*');
 });
@@ -153,7 +156,7 @@ it('warns instead of registering when the proxy is not running', function () {
 
     fakeProcesses([...project(networks: []), 'docker ps*' => Process::result('')]);
 
-    $this->artisan('config', ['--force' => true])
+    $this->artisan('config', ['--host' => 'myapp.localhost', '--force' => true])
         ->expectsOutputToContain("Proxy is not running. Run 'sail-proxy install' first")
         ->assertExitCode(0);
 
@@ -214,7 +217,7 @@ it('reads the project without its own override file', function () {
 
     fakeProcesses([...project(networks: []), 'docker ps*' => Process::result('')]);
 
-    $this->artisan('config', ['--force' => true])->assertExitCode(0);
+    $this->artisan('config', ['--host' => 'myapp.localhost', '--force' => true])->assertExitCode(0);
 
     // Without -f, compose would merge our previous override back in and the
     // networks it added would accumulate on every run.
@@ -229,10 +232,30 @@ it('does not accumulate networks across runs', function () {
     // The project itself knows nothing of takeout; only a previous run added it.
     fakeProcesses([...project(networks: ['sail']), 'docker ps*' => Process::result('')]);
 
-    $this->artisan('config', ['--force' => true])->assertExitCode(0);
+    $this->artisan('config', ['--force' => true])
+        ->expectsConfirmation('Register laravel.test with the proxy?', 'no')
+        ->assertExitCode(0);
 
     expect(file_get_contents($this->project.'/compose.override.yaml'))
         ->not->toContain('takeout');
+});
+
+it('writes no alias when registration is declined', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses([...project(networks: []), 'docker ps*' => Process::result('')]);
+
+    $this->artisan('config', ['--force' => true])
+        ->expectsConfirmation('Register laravel.test with the proxy?', 'no')
+        ->assertExitCode(0);
+
+    // With no hostname to alias there is nothing the map form buys us, so the
+    // networks stay a plain list.
+    expect(file_get_contents($this->project.'/compose.override.yaml'))
+        ->toContain("    networks:\n      - sail-proxy")
+        ->not->toContain('aliases');
+
+    assertDidntRunProcess('*kamal-proxy deploy*');
 });
 
 it('reports a compose file it cannot read', function () {

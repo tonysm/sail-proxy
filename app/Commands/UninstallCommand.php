@@ -20,7 +20,7 @@ class UninstallCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Remove the proxy, DNS, network and volume';
+    protected $description = 'Remove the proxy, network and volume';
 
     /**
      * Execute the console command.
@@ -29,33 +29,24 @@ class UninstallCommand extends Command
     {
         $network = config('proxy.network.name');
         $proxy = config('proxy.proxy.name');
-        $dns = config('proxy.dns.name');
 
         // Read this before we start removing things: once the network is gone
         // there is no way to tell which projects were attached to it.
         $apps = array_values(array_diff(
             $docker->networkContainers($network),
-            [$proxy, $dns],
+            [$proxy],
         ));
 
-        if (! $this->confirmRemoval($docker, $network, $proxy, $dns)) {
+        if (! $this->confirmRemoval($network, $proxy)) {
             return self::SUCCESS;
         }
 
-        $removed = [];
+        // "docker rm -f" exits 0 for a container that is not there, so ask
+        // first rather than claim we removed something we did not.
+        if ($docker->containerExists($proxy)) {
+            $docker->forceRemove($proxy);
 
-        foreach ([$proxy, $dns] as $container) {
-            // "docker rm -f" exits 0 for a container that is not there, so ask
-            // first rather than claim we removed something we did not.
-            if ($docker->containerExists($container)) {
-                $docker->forceRemove($container);
-
-                $removed[] = $container;
-            }
-        }
-
-        if ($removed !== []) {
-            $this->info('Removed '.implode(' and ', $removed).'.');
+            $this->info("Removed {$proxy}.");
         }
 
         foreach ($apps as $app) {
@@ -90,16 +81,16 @@ class UninstallCommand extends Command
     /**
      * Confirm the removal, listing what it covers.
      */
-    protected function confirmRemoval(Docker $docker, string $network, string $proxy, string $dns): bool
+    protected function confirmRemoval(string $network, string $proxy): bool
     {
         if ($this->option('force')) {
             return true;
         }
 
         $this->line('This removes:');
-        $this->line("  containers  {$proxy}, {$dns}");
-        $this->line("  network     {$network}");
-        $this->line("  volume      {$proxy}");
+        $this->line("  container  {$proxy}");
+        $this->line("  network    {$network}");
+        $this->line("  volume     {$proxy}");
         $this->newLine();
 
         if ($this->confirm('Continue?', default: false)) {
@@ -138,8 +129,7 @@ class UninstallCommand extends Command
         $projects = [];
 
         foreach ($apps as $app) {
-            $name = $docker->label($app, 'com.docker.compose.project');
-            $dir = $docker->label($app, 'com.docker.compose.project.working_dir');
+            ['name' => $name, 'dir' => $dir] = $docker->composeProject($app);
 
             $projects[] = $dir
                 ? [$name ?? $app, $dir.'/'.$overrideFile]

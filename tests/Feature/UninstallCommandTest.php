@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Process;
 
 /**
- * Fake a network holding our own containers plus the given app containers.
+ * Fake a network holding the proxy plus the given app containers.
  *
  * @param  array<int, string>  $apps
  * @return array<string, mixed>
@@ -12,7 +12,7 @@ function installed(array $apps = []): array
 {
     return [
         'docker network inspect sail-proxy --format {{range .Containers}}*' => Process::result(
-            implode("\n", ['sail-proxy', 'sail-dns', ...$apps]),
+            implode("\n", ['sail-proxy', ...$apps]),
         ),
         'docker network inspect sail-proxy' => Process::result('[]'),
         'docker volume inspect sail-proxy' => Process::result('[]'),
@@ -20,13 +20,12 @@ function installed(array $apps = []): array
     ];
 }
 
-it('removes the containers, the network and the volume', function () {
+it('removes the container, the network and the volume', function () {
     fakeProcesses(installed());
 
     $this->artisan('uninstall', ['--force' => true])->assertExitCode(0);
 
     assertRanProcess('docker rm -f sail-proxy');
-    assertRanProcess('docker rm -f sail-dns');
     assertRanProcess('docker network rm sail-proxy');
     assertRanProcess('docker volume rm sail-proxy');
 });
@@ -40,7 +39,7 @@ it('force-disconnects app containers before removing the network', function () {
         $ran[] = $command;
 
         return str_contains($command, '{{range .Containers}}')
-            ? Process::result("sail-proxy\nsail-dns\nhotwire-laravel.test-1\nblog-laravel.test-1")
+            ? Process::result("sail-proxy\nhotwire-laravel.test-1\nblog-laravel.test-1")
             : Process::result('[]');
     });
 
@@ -60,13 +59,12 @@ it('force-disconnects app containers before removing the network', function () {
     expect($lastDisconnect)->toBeLessThan(array_search('docker network rm sail-proxy', $ran, true));
 });
 
-it('never disconnects its own containers', function () {
+it('never disconnects its own container', function () {
     fakeProcesses(installed(['app-1']));
 
     $this->artisan('uninstall', ['--force' => true])->assertExitCode(0);
 
     assertDidntRunProcess('docker network disconnect * sail-proxy');
-    assertDidntRunProcess('docker network disconnect * sail-dns');
 });
 
 it('names the projects whose override file still needs removing', function () {

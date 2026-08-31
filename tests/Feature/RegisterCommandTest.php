@@ -40,7 +40,7 @@ it('keeps the whole hostname as the app name when it is not a localhost host', f
 });
 
 it('asks for a container and hostname when they are not given', function () {
-    fakeProcesses(['docker ps*' => Process::result("sail-proxy\nsail-dns\nweb")]);
+    fakeProcesses(['docker ps*' => Process::result("sail-proxy\nweb")]);
 
     $this->artisan('register')
         ->expectsChoice('Select a container:', 'web', ['web'])

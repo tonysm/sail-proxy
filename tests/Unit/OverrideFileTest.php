@@ -5,7 +5,7 @@ use Symfony\Component\Yaml\Tag\TaggedValue;
 use Symfony\Component\Yaml\Yaml;
 
 it('renders an override for every service, wiring only the app service', function () {
-    $yaml = (new OverrideFile('172.42.255.253'))->render(
+    $yaml = (new OverrideFile)->render(
         services: ['laravel.test', 'redis'],
         appService: 'laravel.test',
         appNetworks: ['sail-proxy'],
@@ -17,8 +17,6 @@ it('renders an override for every service, wiring only the app service', functio
       laravel.test:
         container_name: !reset null
         network_mode: !reset null
-        dns:
-          - 172.42.255.253
         ports: !reset []
         networks:
           - sail-proxy
@@ -33,8 +31,37 @@ it('renders an override for every service, wiring only the app service', functio
     YAML);
 });
 
+it('gives the app service a network alias for the hostname it is served on', function () {
+    $yaml = (new OverrideFile)->render(
+        services: ['laravel.test'],
+        appService: 'laravel.test',
+        appNetworks: ['sail', 'sail-proxy'],
+        externalNetworks: ['sail-proxy'],
+        aliases: ['sail-proxy' => ['myapp.localhost']],
+    );
+
+    // Aliases can only be expressed by the map form, so the networks the
+    // service was already on have to come along as keys with no options.
+    expect($yaml)->toBe(<<<'YAML'
+    services:
+      laravel.test:
+        container_name: !reset null
+        network_mode: !reset null
+        ports: !reset []
+        networks:
+          sail: null
+          sail-proxy:
+            aliases:
+              - myapp.localhost
+    networks:
+      sail-proxy:
+        external: true
+
+    YAML);
+});
+
 it('attaches the app to the takeout network and declares it external', function () {
-    $yaml = (new OverrideFile('172.42.255.253'))->render(
+    $yaml = (new OverrideFile)->render(
         services: ['laravel.test'],
         appService: 'laravel.test',
         appNetworks: ['sail-proxy', 'takeout'],
@@ -46,8 +73,6 @@ it('attaches the app to the takeout network and declares it external', function 
       laravel.test:
         container_name: !reset null
         network_mode: !reset null
-        dns:
-          - 172.42.255.253
         ports: !reset []
         networks:
           - sail-proxy
@@ -62,7 +87,7 @@ it('attaches the app to the takeout network and declares it external', function 
 });
 
 it('preserves the networks a service is already attached to', function () {
-    $yaml = (new OverrideFile('172.42.255.253'))->render(
+    $yaml = (new OverrideFile)->render(
         services: ['laravel.test'],
         appService: 'laravel.test',
         appNetworks: ['default', 'sail-proxy'],
@@ -75,7 +100,7 @@ it('preserves the networks a service is already attached to', function () {
 });
 
 it('quotes service names that yaml would otherwise mangle', function () {
-    $yaml = (new OverrideFile('172.42.255.253'))->render(
+    $yaml = (new OverrideFile)->render(
         services: ['yes', 'no:thing'],
         appService: 'yes',
         appNetworks: ['sail-proxy'],
@@ -89,11 +114,12 @@ it('quotes service names that yaml would otherwise mangle', function () {
 });
 
 it('emits reset tags that docker compose understands', function () {
-    $yaml = (new OverrideFile('172.42.255.253'))->render(
+    $yaml = (new OverrideFile)->render(
         services: ['laravel.test'],
         appService: 'laravel.test',
         appNetworks: ['sail-proxy'],
         externalNetworks: ['sail-proxy'],
+        aliases: ['sail-proxy' => ['myapp.localhost']],
     );
 
     $parsed = Yaml::parse($yaml, Yaml::PARSE_CUSTOM_TAGS);
@@ -103,5 +129,6 @@ it('emits reset tags that docker compose understands', function () {
         ->and($service['container_name']->getTag())->toBe('reset')
         ->and($service['container_name']->getValue())->toBeNull()
         ->and($service['ports']->getTag())->toBe('reset')
-        ->and($service['ports']->getValue())->toBe([]);
+        ->and($service['ports']->getValue())->toBe([])
+        ->and($service['networks']['sail-proxy']['aliases'])->toBe(['myapp.localhost']);
 });

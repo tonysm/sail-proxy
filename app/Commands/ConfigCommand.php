@@ -87,12 +87,25 @@ class ConfigCommand extends Command
             }
         }
 
-        file_put_contents($path, $override->render($services, $appService, $networks, $external));
+        // The hostname becomes a network alias on the app service, so it has
+        // to be settled before the file is written rather than at
+        // registration time the way it used to be.
+        $hostname = $this->hostname($compose, $appService);
+
+        $aliases = $hostname === null
+            ? []
+            : [config('proxy.network.name') => [$hostname]];
+
+        file_put_contents($path, $override->render($services, $appService, $networks, $external, $aliases));
 
         $this->info('Created '.config('proxy.override_file'));
 
         $compose->down();
         $compose->up();
+
+        if ($hostname === null) {
+            return self::SUCCESS;
+        }
 
         if (! $proxy->isRunning()) {
             $this->newLine();
@@ -101,7 +114,25 @@ class ConfigCommand extends Command
             return self::SUCCESS;
         }
 
-        return $this->register($compose, $appService);
+        return $this->register($compose, $appService, $hostname);
+    }
+
+    /**
+     * The hostname to serve the app on, or null when the user declines.
+     */
+    protected function hostname(DockerCompose $compose, string $appService): ?string
+    {
+        if ($hostname = $this->option('host')) {
+            return $hostname;
+        }
+
+        if (! $this->confirm("Register {$appService} with the proxy?", default: true)) {
+            return null;
+        }
+
+        $default = basename($compose->path()).'.'.config('proxy.tld');
+
+        return $this->ask('Hostname', $default) ?: null;
     }
 
     /**
@@ -133,28 +164,10 @@ class ConfigCommand extends Command
     }
 
     /**
-     * Offer to register the freshly started app with the proxy.
+     * Register the freshly started app with the proxy.
      */
-    protected function register(DockerCompose $compose, string $appService): int
+    protected function register(DockerCompose $compose, string $appService, string $hostname): int
     {
-        $hostname = $this->option('host');
-
-        if (! $hostname) {
-            if (! $this->confirm("Register {$appService} with the proxy?", default: true)) {
-                return self::SUCCESS;
-            }
-
-            $default = basename($compose->path()).'.'.config('proxy.tld');
-
-            $hostname = $this->ask('Hostname', $default);
-        }
-
-        if (! $hostname) {
-            $this->error('Hostname is required.');
-
-            return self::FAILURE;
-        }
-
         $container = $compose->containerFor($appService);
 
         if (! $container) {

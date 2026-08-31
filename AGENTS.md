@@ -35,10 +35,15 @@ Five commands in `app/Commands/`, each driving thin wrappers in `app/Support/`:
   container.
 - `OverrideFile` — renders the `compose.override.yaml` that `config` writes.
 
-`install` creates the shared network and starts the `sail-proxy` (kamal-proxy) and
-`sail-dns` (dnsmasq) containers on pinned IPs inside a fixed subnet; `config` rewrites a
-project's compose to join that network and registers it; `register`/`unregister` talk to
-kamal-proxy directly; `uninstall` reverses `install`.
+`install` creates the shared network and starts the `sail-proxy` (kamal-proxy) container;
+nothing is pinned, so Docker assigns the network a subnet and the proxy an address from its
+own pool. `config` rewrites a project's compose to join that network — under a network alias
+matching its hostname — and registers it; `register`/`unregister` talk to kamal-proxy
+directly; `uninstall` reverses `install`.
+
+Container-to-container resolution is Docker's embedded resolver answering that alias; there
+is no DNS container. Host-to-container resolution is the OS sending `*.localhost` to
+`127.0.0.1`, where the proxy publishes port 80.
 
 Everything configurable lives in `config/proxy.php`, each key backed by a `SAIL_PROXY_*`
 env var read from the real environment (not a `.env`).
@@ -56,6 +61,13 @@ env var read from the real environment (not a `.env`).
   `WWWUSER`/`WWWGROUP`, without which the container runs as the wrong UID.
 - **`docker rm -f` exits 0 for a missing container**, so check existence separately before
   reporting a removal.
+- **`config` has to settle the hostname before it writes the override**, because the
+  hostname goes in as a network alias. Prompting for it at registration time — after the
+  file is written — would be too late.
+- **Aliases force the map form of `networks:`.** A plain list cannot carry them, so
+  `OverrideFile` switches to `network: {aliases: [...]}` and has to bring the service's
+  other networks along as keys with a null value. It keeps the list form when there is no
+  alias to add.
 
 ## Testing
 

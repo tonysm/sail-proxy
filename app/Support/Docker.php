@@ -60,23 +60,6 @@ class Docker
     }
 
     /**
-     * The subnet configured for the given network, if any.
-     */
-    public function networkSubnet(string $name): ?string
-    {
-        $result = $this->run([
-            'network', 'inspect', $name,
-            '--format', '{{range .IPAM.Config}}{{.Subnet}}{{end}}',
-        ]);
-
-        if ($result->failed()) {
-            return null;
-        }
-
-        return trim($result->output()) ?: null;
-    }
-
-    /**
      * The names of the containers attached to the given network.
      *
      * @return array<int, string>
@@ -158,11 +141,24 @@ class Docker
     }
 
     /**
-     * Create a network with the given subnet.
+     * The compose project a container belongs to, as its labels report it.
+     *
+     * @return array{name: string|null, dir: string|null}
      */
-    public function createNetwork(string $name, string $subnet): ProcessResult
+    public function composeProject(string $container): array
     {
-        return $this->run(['network', 'create', '--subnet', $subnet, $name]);
+        return [
+            'name' => $this->label($container, 'com.docker.compose.project'),
+            'dir' => $this->label($container, 'com.docker.compose.project.working_dir'),
+        ];
+    }
+
+    /**
+     * Create a network, letting Docker assign it a subnet.
+     */
+    public function createNetwork(string $name): ProcessResult
+    {
+        return $this->run(['network', 'create', $name]);
     }
 
     /**

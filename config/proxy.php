@@ -7,23 +7,22 @@ return [
     | Docker Network
     |--------------------------------------------------------------------------
     |
-    | The dedicated network that the proxy, the DNS resolver and every proxied
-    | app container share. The subnet is fixed so that the proxy and the DNS
-    | resolver can be pinned to stable addresses the containers can reach.
+    | The dedicated network that the proxy and every proxied app container
+    | share. Docker assigns it a subnet from its own pool; we pin nothing, so
+    | there is nothing here to collide with another network or a VPN route.
+    |
+    | Apps find each other over this network by hostname: "config" gives the
+    | app service a network alias matching the hostname it is served on, and
+    | Docker's embedded resolver answers for it.
     |
     | Note this must not be called "sail": Sail's own compose file defines a
     | project-local network by that name, and reusing it in the override would
     | replace that definition and drag every service onto the shared network.
     |
-    | Takeout's own network takes whatever subnet Docker assigns it, so the
-    | two coexist. An older "takeout" network pinned to this subnet will
-    | conflict; remove it.
-    |
     */
 
     'network' => [
         'name' => env('SAIL_PROXY_NETWORK', 'sail-proxy'),
-        'subnet' => env('SAIL_PROXY_SUBNET', '172.42.0.0/16'),
     ],
 
     /*
@@ -38,26 +37,8 @@ return [
 
     'proxy' => [
         'name' => env('SAIL_PROXY_NAME', 'sail-proxy'),
-        'ip' => env('SAIL_PROXY_IP', '172.42.255.254'),
         'image' => env('SAIL_PROXY_IMAGE', 'basecamp/kamal-proxy:once-01'),
         'metrics_port' => env('SAIL_PROXY_METRICS_PORT', 9000),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | DNS Container
-    |--------------------------------------------------------------------------
-    |
-    | dnsmasq resolves every "*.localhost" hostname to the proxy and forwards
-    | everything else upstream.
-    |
-    */
-
-    'dns' => [
-        'name' => env('SAIL_PROXY_DNS_NAME', 'sail-dns'),
-        'ip' => env('SAIL_PROXY_DNS_IP', '172.42.255.253'),
-        'image' => env('SAIL_PROXY_DNS_IMAGE', 'drpsychick/dnsmasq'),
-        'upstream' => env('SAIL_PROXY_DNS_UPSTREAM', '8.8.8.8'),
     ],
 
     /*

@@ -9,51 +9,48 @@ it('creates the network when it does not exist', function () {
 
     $this->artisan('install')->assertExitCode(0);
 
-    assertRanProcess('docker network create --subnet 172.42.0.0/16 sail-proxy');
+    // Docker picks the subnet: we pin nothing, so there is nothing to collide.
+    assertRanProcess('docker network create sail-proxy');
 });
 
-it('leaves an existing network with the expected subnet alone', function () {
-    fakeProcesses([
-        'docker network inspect sail-proxy --format*' => Process::result('172.42.0.0/16'),
-    ]);
+it('leaves an existing network alone', function () {
+    fakeProcesses();
 
     $this->artisan('install')->assertExitCode(0);
 
     assertDidntRunProcess('docker network create*');
 });
 
-it('refuses to continue when the network has a different subnet', function () {
-    fakeProcesses([
-        'docker network inspect sail-proxy --format*' => Process::result('10.0.0.0/16'),
-    ]);
-
-    $this->artisan('install')
-        ->expectsOutputToContain('has subnet 10.0.0.0/16 (expected 172.42.0.0/16)')
-        ->assertExitCode(1);
-
-    assertDidntRunProcess('docker run*');
-});
-
-it('starts the dns resolver and the proxy', function () {
-    fakeProcesses([
-        'docker network inspect sail-proxy --format*' => Process::result('172.42.0.0/16'),
-        'docker ps*' => Process::result(''),
-    ]);
+it('starts the proxy', function () {
+    fakeProcesses(['docker ps*' => Process::result('')]);
 
     $this->artisan('install')->assertExitCode(0);
 
-    assertRanProcess('docker run -d --name sail-dns --network sail-proxy --ip 172.42.255.253 * --address=/.localhost/172.42.255.254 --server=8.8.8.8');
-    assertRanProcess('docker run -d --name sail-proxy --network sail-proxy --ip 172.42.255.254 * kamal-proxy run');
+    assertRanProcess('docker run -d --name sail-proxy --network sail-proxy * kamal-proxy run');
 });
 
-it('does not restart containers that are already running', function () {
-    fakeProcesses([
-        'docker network inspect sail-proxy --format*' => Process::result('172.42.0.0/16'),
-        'docker ps*' => Process::result("sail-proxy\nsail-dns"),
-    ]);
+it('starts no other container', function () {
+    fakeProcesses(['docker ps*' => Process::result('')]);
+
+    $this->artisan('install')->assertExitCode(0);
+
+    // Apps resolve each other through network aliases, so there is no DNS
+    // container to run any more.
+    assertDidntRunProcess('docker run -d --name sail-dns*');
+});
+
+it('does not pin the proxy to an address', function () {
+    fakeProcesses(['docker ps*' => Process::result('')]);
+
+    $this->artisan('install')->assertExitCode(0);
+
+    assertDidntRunProcess('docker run * --ip *');
+});
+
+it('does not restart a proxy that is already running', function () {
+    fakeProcesses(['docker ps*' => Process::result('sail-proxy')]);
 
     $this->artisan('install')
-        ->expectsOutputToContain('DNS already running.')
         ->expectsOutputToContain('Proxy already running.')
         ->assertExitCode(0);
 
@@ -78,15 +75,14 @@ it('reports a network that could not be created instead of claiming success', fu
 
 it('reports a container that refused to start', function () {
     fakeProcesses([
-        'docker network inspect sail-proxy --format*' => Process::result('172.42.0.0/16'),
         'docker ps*' => Process::result(''),
-        'docker run -d --name sail-dns*' => Process::result(
+        'docker run -d --name sail-proxy*' => Process::result(
             output: '', errorOutput: 'address already in use', exitCode: 1,
         ),
     ]);
 
     $this->artisan('install')
-        ->expectsOutputToContain("Could not start 'sail-dns'.")
+        ->expectsOutputToContain("Could not start 'sail-proxy'.")
         ->expectsOutputToContain('address already in use')
         ->assertExitCode(1);
 });

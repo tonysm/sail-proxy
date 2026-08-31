@@ -25,9 +25,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(Docker::class);
         $this->app->singleton(KamalProxy::class);
-        $this->app->singleton(OverrideFile::class, fn (): OverrideFile => new OverrideFile(
-            config('proxy.dns.ip'),
-        ));
+        $this->app->singleton(OverrideFile::class);
 
         // Compose always operates on the directory the command was run from.
         $this->app->singleton(DockerCompose::class, fn (): DockerCompose => new DockerCompose(
