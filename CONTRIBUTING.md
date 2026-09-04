@@ -87,12 +87,21 @@ The application is distributed as a PHAR, following Laravel Zero's [Packagist gu
 
 ## Releasing
 
-The archive is what Composer serves, so it has to be rebuilt and committed *before* the tag:
+One command does the whole thing:
 
 ```bash
-php sail-proxy app:build sail-proxy --build-version=v1.2.3
-git add builds/sail-proxy && git commit -m "Build v1.2.3"
-git tag -a v1.2.3 -m "v1.2.3" && git push --follow-tags
+scripts/release.sh 1.2.3            # stable release, tag v1.2.3
+scripts/release.sh 1.2.3-rc.1       # prerelease, tag v1.2.3-rc.1
+scripts/release.sh 1.2.3 --dry-run  # validate and run the checks, change nothing
 ```
 
-Pushing the tag triggers `.github/workflows/release.yml`, which attaches the archive to the GitHub release. It first checks that the version baked into `builds/sail-proxy` matches the tag and fails the release if not, so forgetting the rebuild is caught rather than silently shipped.
+`VERSION` accepts `1.2.3` or `v1.2.3`; the tag is always `v1.2.3`. The script:
+
+1. Validates the version, that you are on the default branch with a clean tree synced to origin, and that the tag does not already exist — and refuses a stable version that is not newer than the latest stable tag, so a rejected release leaves main untouched.
+2. Runs the checks (`pint --test`, `pest`).
+3. Rebuilds the archive with the tag baked in (`app:build --build-version=`), verifies `--version` reports it, and commits `builds/sail-proxy`. This commit is what Composer serves, so it has to land *before* the tag.
+4. Creates the annotated tag and pushes the commit and tag in one `--atomic` push. A rejection — the tag got taken or main moved while the build ran — rolls the local clone back to where it started.
+
+Pushing the tag triggers `.github/workflows/release.yml`, which runs against the tag SHA. It re-runs the checks, verifies the version baked into `builds/sail-proxy` matches the tag (so a hand-pushed tag with a stale archive fails instead of shipping), then publishes the GitHub release with the archive, a `checksums.txt`, and a build-provenance attestation. Tags containing `-` are marked prerelease and never become Latest, which also keeps them out of mise's `latest` resolution.
+
+The same archive asset is what `mise use -g github:tonysm/sail-proxy` and the curl one-liner install, so the asset name is load-bearing: keep it bare and unversioned (`sail-proxy`), or both break.

@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -20,6 +22,15 @@ jobs:
           php-version: "8.4"
           coverage: none
 
+      - uses: ramsey/composer-install@v3
+
+      # Gate the release on the same checks CI runs: a tag pushed by hand
+      # (bypassing scripts/release.sh) must not ship code that fails them.
+      - name: Run the checks
+        run: |
+          vendor/bin/pint --test
+          vendor/bin/pest
+
       # The archive is committed, and Composer installs it straight from the
       # tag, so a stale build ships silently. Make that a failed release
       # instead: the version baked in at build time has to match the tag.
@@ -30,11 +41,48 @@ jobs:
           echo "archive reports: $BUILT"
           if ! grep -qF "${{ github.ref_name }}" <<< "$BUILT"; then
             echo "::error::builds/sail-proxy reports '$BUILT' but the tag is '${{ github.ref_name }}'."
-            echo "::error::Run 'php sail-proxy app:build sail-proxy --build-version=${{ github.ref_name }}' and commit it before tagging."
+            echo "::error::Release with 'scripts/release.sh ${GITHUB_REF_NAME#v}' — it rebuilds and commits the archive before tagging."
             exit 1
           fi
 
+      # Bare filename in the checksums, so `sha256sum -c` works from a
+      # directory holding just the downloaded assets.
+      - name: Generate checksums
+        run: (cd builds && sha256sum sail-proxy) > checksums.txt
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-paths: |
+            builds/sail-proxy
+            checksums.txt
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: builds/sail-proxy
+          files: |
+            builds/sail-proxy
+            checksums.txt
+          # Tags with a suffix (v1.2.3-rc.1) become prereleases: never marked
+          # Latest, and mise skips them when resolving "latest".
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
+          body: |
+            ### Install
+
+            **mise:**
+            ```sh
+            mise use -g github:tonysm/sail-proxy
+            ```
+
+            **Composer:**
+            ```sh
+            composer global require tonysm/sail-proxy
+            ```
+
+            **Direct download:**
+            ```sh
+            curl -L https://github.com/tonysm/sail-proxy/releases/latest/download/sail-proxy -o ~/.local/bin/sail-proxy
+            chmod +x ~/.local/bin/sail-proxy
+            ```
+
+            Requires PHP 8.4+ on your PATH.

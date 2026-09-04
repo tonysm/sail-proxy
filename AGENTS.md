@@ -116,12 +116,19 @@ as one substring, or run the command with `Artisan::call()` and assert against
 ## Distribution
 
 Composer serves the committed `builds/sail-proxy` archive (`bin` points at it, and `/builds`
-is deliberately not gitignored), so it must be rebuilt and committed *before* tagging:
+is deliberately not gitignored). The same archive is the GitHub release asset installed by
+the curl one-liner and by `mise use -g github:tonysm/sail-proxy` — its name is load-bearing:
+keep it bare and unversioned (`sail-proxy`), or both break.
+
+Releasing is one command; it validates, runs pint and pest, rebuilds the archive with the
+tag baked in, commits it (Composer installs straight from the tag, so the build commit must
+land first), then tags and pushes main and the tag in one `--atomic` push:
 
 ```bash
-php sail-proxy app:build sail-proxy --build-version=v1.2.3
-git add builds/sail-proxy && git commit -m "Build v1.2.3"
-git tag -a v1.2.3 -m "v1.2.3" && git push --follow-tags
+scripts/release.sh 1.2.3   # or 1.2.3-rc.1 for a prerelease, or --dry-run
 ```
 
-The release workflow fails if the version baked into the archive doesn't match the tag.
+Tags must be `v`-prefixed to trigger the release workflow, which re-runs the checks, fails
+if the version baked into the archive doesn't match the tag, and publishes the archive plus
+`checksums.txt` with a build-provenance attestation. `-`-suffixed tags ship as prereleases
+and never become Latest.

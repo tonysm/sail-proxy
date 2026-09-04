@@ -40,24 +40,30 @@ Use it for **server-side requests to another app**. Any URL you render into HTML
 
 ## Requirements
 
-Just Docker.
+Docker, and PHP 8.4+ on your PATH to run the `sail-proxy` command itself.
 
 ## Install
+
+**mise:**
+
+```bash
+mise use -g github:tonysm/sail-proxy
+```
+
+**Composer:**
 
 ```bash
 composer global require tonysm/sail-proxy
 ```
 
-Then `sail-proxy` is available everywhere.
-
-That installs a single self-contained archive — no dependencies are added to your global Composer setup, so it can't conflict with anything else you have installed.
-
-Or, if you'd rather not go through Composer, download the same binary from the [latest release](https://github.com/tonysm/sail-proxy/releases/latest):
+**Direct download** from the [latest release](https://github.com/tonysm/sail-proxy/releases/latest):
 
 ```bash
 curl -L https://github.com/tonysm/sail-proxy/releases/latest/download/sail-proxy -o ~/.local/bin/sail-proxy
 chmod +x ~/.local/bin/sail-proxy
 ```
+
+All three install the same self-contained archive. The Composer route adds no dependencies to your global setup, so it can't conflict with anything else you have installed.
 
 ## Usage
 
