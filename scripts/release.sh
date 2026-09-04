@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Usage: scripts/release.sh VERSION [--dry-run]
-#   VERSION: semver (0.3.0, 0.3.0-rc.1); a v prefix on the argument is ignored,
-#   the tag is always bare (0.3.0)
+#   VERSION: bare semver (0.3.0, 0.3.0-rc.1), which is also the tag
 #
 # Validates, runs the checks, rebuilds the PHAR with the release version baked
 # in, commits it, tags, and pushes to trigger the release workflow. Set
@@ -42,12 +41,11 @@ if [[ -z "$VERSION" || "$VERSION" == "dev" ]]; then
     exit 1
 fi
 
-# --- Normalise and validate the version ---
-VERSION="${VERSION#v}"
+# --- Validate the version ---
 # Leading zeros are refused (semver forbids them, and bash arithmetic would
 # read 08 as broken octal in the version comparison below).
 if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-zA-Z0-9.]+)?$ ]]; then
-    die "Invalid version '${VERSION}' (expected X.Y.Z or X.Y.Z-suffix without leading zeros, optionally v-prefixed)"
+    die "Invalid version '${VERSION}' (expected X.Y.Z or X.Y.Z-suffix, without leading zeros or a v prefix)"
 fi
 
 TAG="${VERSION}"
@@ -122,7 +120,8 @@ version_lt() {
 }
 
 if [[ "$PRERELEASE" -eq 0 ]]; then
-    # Legacy tags are unprefixed (0.2.0), current ones are v-prefixed — match both.
+    # Tags are bare (0.2.0), but one legacy tag is v-prefixed — match both, or
+    # the history this compares against has a hole in it.
     LATEST_STABLE=$(git tag --list --sort=-version:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
     if [[ -n "$LATEST_STABLE" && "$LATEST_STABLE" != "$TAG" ]] && ! version_lt "$LATEST_STABLE" "$TAG"; then
         die "Version $VERSION is not newer than the latest stable release ${LATEST_STABLE#v}. Stable releases cannot go backwards."

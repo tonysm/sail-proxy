@@ -90,12 +90,12 @@ The application is distributed as a PHAR, following Laravel Zero's [Packagist gu
 One command does the whole thing:
 
 ```bash
-scripts/release.sh 1.2.3            # stable release, tag v1.2.3
-scripts/release.sh 1.2.3-rc.1       # prerelease, tag v1.2.3-rc.1
+scripts/release.sh 1.2.3            # stable release, tag 1.2.3
+scripts/release.sh 1.2.3-rc.1       # prerelease, tag 1.2.3-rc.1
 scripts/release.sh 1.2.3 --dry-run  # validate and run the checks, change nothing
 ```
 
-`VERSION` accepts `1.2.3` or `v1.2.3`; the tag is always `v1.2.3`. The script:
+`VERSION` is bare semver (`1.2.3`), and the tag is the same string — no `v` prefix, which is what the release workflow's tag filter matches. The script:
 
 1. Validates the version, that you are on the default branch with a clean tree synced to origin, and that the tag does not already exist — and refuses a stable version that is not newer than the latest stable tag, so a rejected release leaves main untouched.
 2. Runs the checks (`pint --test`, `pest`).

@@ -128,7 +128,7 @@ land first), then tags and pushes main and the tag in one `--atomic` push:
 scripts/release.sh 1.2.3   # or 1.2.3-rc.1 for a prerelease, or --dry-run
 ```
 
-Tags must be `v`-prefixed to trigger the release workflow, which re-runs the checks, fails
-if the version baked into the archive doesn't match the tag, and publishes the archive plus
-`checksums.txt` with a build-provenance attestation. `-`-suffixed tags ship as prereleases
-and never become Latest.
+Tags are bare semver (`1.2.3`); the release workflow triggers on numeric semver tags. It
+re-runs the checks, fails if the version baked into the archive doesn't match the tag, and
+publishes the archive plus `checksums.txt` with a build-provenance attestation.
+`-`-suffixed tags ship as prereleases and never become Latest.

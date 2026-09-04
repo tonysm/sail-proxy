@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["[0-9]+.[0-9]+.[0-9]+*"]
 
 permissions:
   contents: write
@@ -41,7 +41,7 @@ jobs:
           echo "archive reports: $BUILT"
           if ! grep -qF "${{ github.ref_name }}" <<< "$BUILT"; then
             echo "::error::builds/sail-proxy reports '$BUILT' but the tag is '${{ github.ref_name }}'."
-            echo "::error::Release with 'scripts/release.sh ${GITHUB_REF_NAME#v}' — it rebuilds and commits the archive before tagging."
+            echo "::error::Release with 'scripts/release.sh ${GITHUB_REF_NAME}' — it rebuilds and commits the archive before tagging."
             exit 1
           fi
 
