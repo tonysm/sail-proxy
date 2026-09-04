@@ -31,12 +31,17 @@ class StatusCommand extends Command
     {
         $active = $proxy->isRunning();
 
+        // A running container is an installed one, so only a proxy that isn't
+        // running is worth another round trip to docker.
+        $installed = $active || $proxy->exists();
+
         $projects = $active
             ? array_map(fn (array $service): array => $this->locate($docker, $service), $proxy->services())
             : [];
 
         if ($this->option('json')) {
             $this->line((string) json_encode([
+                'installed' => $installed,
                 'active' => $active,
                 'projects' => $projects,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -45,11 +50,13 @@ class StatusCommand extends Command
         }
 
         $this->newLine();
-        $this->line('  Proxy: '.($active ? 'on' : 'off'));
+        $this->line('  Proxy: '.($active ? 'on' : 'off').($installed ? '' : ' (not installed)'));
         $this->newLine();
 
         if (! $active) {
-            $this->line("  Run 'sail-proxy install' to start it.");
+            $this->line($installed
+                ? "  Run 'sail-proxy start' to start it."
+                : "  Run 'sail-proxy install' to set it up.");
             $this->newLine();
 
             return self::SUCCESS;

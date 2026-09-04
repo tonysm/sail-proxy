@@ -157,6 +157,7 @@ out (`path` and `tls`):
 
 ```json
 {
+    "installed": true,
     "active": true,
     "projects": [
         {
@@ -176,8 +177,11 @@ out (`path` and `tls`):
 ```
 
 `state` is what kamal-proxy believes; `exists` is whether the container is actually there.
-A stopped proxy is a status, not a failure: you get `"active": false` with no projects, and
-the command still exits 0. Branch on `active`, not on the exit code.
+`installed` is whether the proxy container exists at all: `"installed": false` means
+`install` has never run, while `installed` with `"active": false` is a proxy that is merely
+stopped and can be brought back with `start`. A stopped proxy is a status, not a failure:
+you get `"active": false` with no projects, and the command still exits 0. Branch on
+`active`, not on the exit code.
 
 ## Configuration
 

@@ -61,28 +61,63 @@ it('reports the proxy as off without asking it for anything', function () {
 
     expect($code)->toBe(0)
         ->and($output)->toContain('Proxy: off')
-        ->and($output)->toContain("Run 'sail-proxy install' to start it.");
+        ->and($output)->toContain("Run 'sail-proxy start' to start it.");
 
     assertDidntRunProcess('docker exec * kamal-proxy list');
     assertDidntRunProcess('docker inspect*');
 });
 
-it('reports the proxy as off in JSON', function () {
+it('points at install when the proxy container was never created', function () {
+    fakeProcesses([
+        'docker ps*' => Process::result(''),
+        'docker container inspect sail-proxy' => Process::result(
+            output: '', errorOutput: 'No such object', exitCode: 1,
+        ),
+    ]);
+
+    [$code, $output] = runStatus();
+
+    expect($code)->toBe(0)
+        ->and($output)->toContain('Proxy: off (not installed)')
+        ->and($output)->toContain("Run 'sail-proxy install' to set it up.");
+});
+
+it('reports the proxy as installed but off in JSON', function () {
     fakeProcesses(['docker ps*' => Process::result('')]);
 
     [$code, $output] = runStatus(['--json' => true]);
 
     expect($code)->toBe(0)
         ->and(json_decode($output, true))->toBe([
+            'installed' => true,
             'active' => false,
             'projects' => [],
         ]);
+});
+
+it('reports the proxy as not installed in JSON', function () {
+    fakeProcesses([
+        'docker ps*' => Process::result(''),
+        'docker container inspect sail-proxy' => Process::result(
+            output: '', errorOutput: 'No such object', exitCode: 1,
+        ),
+    ]);
+
+    [, $output] = runStatus(['--json' => true]);
+
+    expect(json_decode($output, true))->toBe([
+        'installed' => false,
+        'active' => false,
+        'projects' => [],
+    ]);
 });
 
 it('lists the registered apps in a table', function () {
     fakeProxyWithApps();
 
     [$code, $output] = runStatus();
+
+    assertDidntRunProcess('docker container inspect*');
 
     expect($code)->toBe(0)
         ->and($output)->toContain('Proxy: on')
@@ -133,6 +168,7 @@ it('outputs every column as JSON, with the container behind it', function () {
 
     expect($code)->toBe(0)
         ->and(json_decode($output, true))->toBe([
+            'installed' => true,
             'active' => true,
             'projects' => [
                 [
