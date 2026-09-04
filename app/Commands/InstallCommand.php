@@ -20,7 +20,7 @@ class InstallCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Start the proxy container';
+    protected $description = 'Create the proxy network and container';
 
     /**
      * Execute the console command.

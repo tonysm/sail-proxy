@@ -67,6 +67,25 @@ Start the proxy once, then configure each app.
 
 Creates the `sail-proxy` network and starts the proxy. Run this once per machine; it is safe to re-run. Docker assigns the network a subnet from its own pool — nothing is pinned, so there is nothing to collide with a VPN route or another network.
 
+### `sail-proxy start` / `stop` / `restart`
+
+Take the proxy down and bring it back without losing anything:
+
+```bash
+sail-proxy stop      # frees port 80; your apps keep running
+sail-proxy start
+sail-proxy restart
+```
+
+These only ever touch the proxy container — app containers, the network and the volume of
+registrations are left alone, so everything you had registered is still served when it comes
+back. `sail-proxy status` tells you which state it is in.
+
+A stopped proxy **stays stopped**, including across a reboot. The container runs with
+`--restart unless-stopped`, and an explicit stop outranks that policy until something starts
+it again. Use `start` for that; `install` won't help, since it leaves an existing container
+where it is.
+
 ### `sail-proxy uninstall`
 
 Removes everything `install` created: the `sail-proxy` container, the `sail-proxy` network, and the `sail-proxy` volume that holds the proxy's registrations. Asks first unless you pass `--force`.

@@ -28,6 +28,30 @@ class KamalProxy
     }
 
     /**
+     * Determine if the proxy container is there at all, running or not.
+     */
+    public function exists(): bool
+    {
+        return $this->docker->containerExists($this->container());
+    }
+
+    /**
+     * Start the proxy container.
+     */
+    public function start(): ProcessResult
+    {
+        return $this->docker->start($this->container());
+    }
+
+    /**
+     * Stop the proxy container.
+     */
+    public function stop(): ProcessResult
+    {
+        return $this->docker->stop($this->container());
+    }
+
+    /**
      * Point a hostname at a container.
      */
     public function deploy(string $app, string $target, string $host): ProcessResult

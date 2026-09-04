@@ -26,7 +26,7 @@ CI runs Pest on PHP 8.3, 8.4 and 8.5.
 
 ## Architecture
 
-Six commands in `app/Commands/`, each driving thin wrappers in `app/Support/`:
+Nine commands in `app/Commands/`, each driving thin wrappers in `app/Support/`:
 
 - `Docker` — the `docker` CLI (containers, networks, volumes, labels). `labels()` reads a
   set of labels in one `inspect`, and returns null when the container is gone.
@@ -40,7 +40,9 @@ Six commands in `app/Commands/`, each driving thin wrappers in `app/Support/`:
 nothing is pinned, so Docker assigns the network a subnet and the proxy an address from its
 own pool. `config` rewrites a project's compose to join that network — under a network alias
 matching its hostname — and registers it; `register`/`unregister` talk to kamal-proxy
-directly; `uninstall` reverses `install`.
+directly; `uninstall` reverses `install`. `start`/`stop`/`restart` are lifecycle verbs over
+the container `install` created and touch nothing else -- `restart` is `stop --brief` then
+`start`, via `$this->call()`.
 
 Container-to-container resolution is Docker's embedded resolver answering that alias; there
 is no DNS container. Host-to-container resolution is the OS sending `*.localhost` to
@@ -64,6 +66,9 @@ env var read from the real environment (not a `.env`).
   or a re-run feeds our previous override back in and accumulates networks.
 - **Restart projects through `./vendor/bin/sail`** (`DockerCompose::command()`): it exports
   `WWWUSER`/`WWWGROUP`, without which the container runs as the wrong UID.
+- **An explicit `docker stop` outranks `--restart unless-stopped`.** The proxy stays down
+  across daemon and machine restarts until something starts it again, which is why `start`
+  exists as its own verb -- and why `stop` says so in its output.
 - **`docker rm -f` exits 0 for a missing container**, so check existence separately before
   reporting a removal.
 - **`config` has to settle the hostname before it writes the override**, because the

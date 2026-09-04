@@ -191,6 +191,22 @@ class Docker
     }
 
     /**
+     * Start an existing container.
+     */
+    public function start(string $name): ProcessResult
+    {
+        return $this->run(['start', $name]);
+    }
+
+    /**
+     * Stop a running container.
+     */
+    public function stop(string $name): ProcessResult
+    {
+        return $this->run(['stop', $name]);
+    }
+
+    /**
      * Remove a container, ignoring the case where it does not exist.
      */
     public function forceRemove(string $name): void
