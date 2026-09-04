@@ -55,18 +55,54 @@ class KamalProxy
      */
     public function apps(): array
     {
+        return array_column($this->services(), 'service');
+    }
+
+    /**
+     * Every service the proxy is routing, one row per registered app.
+     *
+     * kamal-proxy renders a padded table, and colours every cell whether or not
+     * it is talking to a terminal, so the escape codes have to come off before
+     * anything can be read out of it.
+     *
+     * @return array<int, array<string, string>>
+     */
+    public function services(): array
+    {
         $result = $this->docker->exec($this->container(), ['kamal-proxy', 'list']);
 
         if ($result->failed()) {
             return [];
         }
 
-        $lines = array_values(array_filter(array_map(trim(...), explode("\n", $result->output()))));
-
-        // The first line is the table header.
-        return array_values(array_filter(array_map(
-            fn (string $line): string => (string) strtok($line, " \t"),
-            array_slice($lines, 1),
+        $lines = array_values(array_filter(array_map(
+            trim(...),
+            explode("\n", (string) preg_replace('/\e\[[0-9;]*m/', '', $result->output())),
         )));
+
+        // The first line is the table header, and names the keys.
+        $headers = array_map(strtolower(...), $this->cells(array_shift($lines) ?? ''));
+
+        return array_map(function (string $line) use ($headers): array {
+            // Pad the row out to the header, so a column we couldn't read
+            // costs us that value and not the whole row.
+            $cells = array_slice($this->cells($line), 0, count($headers));
+            $cells = array_pad($cells, count($headers), '');
+
+            return array_combine($headers, $cells);
+        }, $lines);
+    }
+
+    /**
+     * Split a row of the table into its cells.
+     *
+     * Columns are padded apart by at least two spaces, so that is the seam --
+     * a single space is part of a value.
+     *
+     * @return array<int, string>
+     */
+    protected function cells(string $line): array
+    {
+        return preg_split('/\s{2,}/', trim($line)) ?: [];
     }
 }

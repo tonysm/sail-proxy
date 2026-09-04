@@ -126,18 +126,42 @@ class Docker
      */
     public function label(string $container, string $label): ?string
     {
-        $result = $this->run([
-            'inspect', $container,
-            '--format', '{{index .Config.Labels "'.$label.'"}}',
-        ]);
+        return $this->labels($container, [$label])[$label] ?? null;
+    }
+
+    /**
+     * Read several labels off a container in one call.
+     *
+     * Null means the container itself is gone -- an empty label reads as a null
+     * value inside the array, so the two cases stay apart.
+     *
+     * @param  array<int, string>  $labels
+     * @return array<string, string|null>|null
+     */
+    public function labels(string $container, array $labels): ?array
+    {
+        $format = implode('{{"\n"}}', array_map(
+            fn (string $label): string => '{{index .Config.Labels "'.$label.'"}}',
+            $labels,
+        ));
+
+        $result = $this->run(['inspect', $container, '--format', $format]);
 
         if ($result->failed()) {
             return null;
         }
 
-        $value = trim($result->output());
+        // One line per label, in the order they were asked for, so they can't
+        // be filtered or reordered the way lines() does. Only the trailing
+        // newline comes off: an empty first label is a leading blank line, and
+        // trimming that would shift every value up one.
+        $values = array_map(trim(...), explode("\n", rtrim($result->output(), "\n")));
+        $values = array_pad(array_slice($values, 0, count($labels)), count($labels), '');
 
-        return ($value === '' || $value === '<no value>') ? null : $value;
+        return array_map(
+            fn (string $value): ?string => ($value === '' || $value === '<no value>') ? null : $value,
+            array_combine($labels, $values),
+        );
     }
 
     /**
@@ -147,9 +171,14 @@ class Docker
      */
     public function composeProject(string $container): array
     {
+        $labels = $this->labels($container, [
+            'com.docker.compose.project',
+            'com.docker.compose.project.working_dir',
+        ]) ?? [];
+
         return [
-            'name' => $this->label($container, 'com.docker.compose.project'),
-            'dir' => $this->label($container, 'com.docker.compose.project.working_dir'),
+            'name' => $labels['com.docker.compose.project'] ?? null,
+            'dir' => $labels['com.docker.compose.project.working_dir'] ?? null,
         ];
     }
 

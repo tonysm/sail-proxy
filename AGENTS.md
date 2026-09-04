@@ -26,13 +26,14 @@ CI runs Pest on PHP 8.3, 8.4 and 8.5.
 
 ## Architecture
 
-Five commands in `app/Commands/`, each driving thin wrappers in `app/Support/`:
+Six commands in `app/Commands/`, each driving thin wrappers in `app/Support/`:
 
-- `Docker` — the `docker` CLI (containers, networks, volumes, labels).
+- `Docker` — the `docker` CLI (containers, networks, volumes, labels). `labels()` reads a
+  set of labels in one `inspect`, and returns null when the container is gone.
 - `DockerCompose` — `docker compose` for a single project directory, bound as a singleton
   to `getcwd()`. Prefers `./vendor/bin/sail` over bare `docker compose` when present.
 - `KamalProxy` — `kamal-proxy deploy|remove|list`, run via `docker exec` into the proxy
-  container.
+  container. `services()` parses the `list` table; `apps()` is the service column of it.
 - `OverrideFile` — renders the `compose.override.yaml` that `config` writes.
 
 `install` creates the shared network and starts the `sail-proxy` (kamal-proxy) container;
@@ -75,6 +76,14 @@ env var read from the real environment (not a `.env`).
   the literal `.localhost` suffix rather than `proxy.tld`, since that is what libcurl
   special-cases: a user running `SAIL_PROXY_TLD=test` already has a working name and gets no
   redundant second alias.
+- **kamal-proxy colours its `list` output unconditionally.** `NO_COLOR`, `TERM=dumb` and
+  the absence of a TTY make no difference, so anything reading that table has to strip
+  `\e[...m` first — `KamalProxy::services()` does, and splits cells on two-or-more spaces
+  since that is the padding kamal-proxy writes.
+- **`docker inspect --format` label reads are positional.** `Docker::labels()` asks for
+  several labels separated by `{{"\n"}}` and maps the lines back onto the names it was
+  given, so only the *trailing* newline may be trimmed: an unset first label comes back as
+  a leading blank line, and trimming that shifts every value up one.
 - **Aliases force the map form of `networks:`.** A plain list cannot carry them, so
   `OverrideFile` switches to `network: {aliases: [...]}` and has to bring the service's
   other networks along as keys with a null value. It keeps the list form when there is no
@@ -94,8 +103,10 @@ assertDidntRunProcess('docker network create*');
 
 `Process::recorded()` does not exist in this version of `illuminate/process`; to assert
 ordering, record commands inside a `Process::fake(closure)` (see `UninstallCommandTest`).
-Two `expectsOutputToContain()` calls matching the same output line will fail — assert the
-whole line as one substring.
+Two `expectsOutputToContain()` calls matching the same *write* will fail — a table or a
+blob of JSON is one write, so only the first substring ever matches. Assert the whole line
+as one substring, or run the command with `Artisan::call()` and assert against
+`Artisan::output()` (see `StatusCommandTest`).
 
 ## Distribution
 

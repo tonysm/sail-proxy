@@ -43,3 +43,20 @@ it('fails when no apps are registered', function () {
         ->expectsOutputToContain('No apps registered with the proxy.')
         ->assertExitCode(1);
 });
+
+it('strips the colours kamal-proxy writes into its table', function () {
+    fakeProcesses([
+        'docker ps*' => Process::result('sail-proxy'),
+        'docker exec sail-proxy kamal-proxy list' => Process::result(implode("\n", [
+            "\e[3;94mService\e[0m  \e[3;94mHost\e[0m             \e[3;94mTarget\e[0m",
+            "\e[1;34mmyapp\e[0m    \e[mmyapp.localhost\e[0m  \e[mapp-1:80\e[0m",
+            "\e[1;34mblog\e[0m     \e[mblog.localhost\e[0m   \e[mblog-1:80\e[0m",
+        ])),
+    ]);
+
+    $this->artisan('unregister')
+        ->expectsChoice('Select an app to unregister:', 'blog', ['myapp', 'blog'])
+        ->assertExitCode(0);
+
+    assertRanProcess('docker exec sail-proxy kamal-proxy remove blog');
+});

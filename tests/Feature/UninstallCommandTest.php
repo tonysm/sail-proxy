@@ -70,8 +70,9 @@ it('never disconnects its own container', function () {
 it('names the projects whose override file still needs removing', function () {
     fakeProcesses([
         ...installed(['hotwire-laravel.test-1']),
-        'docker inspect hotwire-laravel.test-1 --format {{index .Config.Labels "com.docker.compose.project"}}' => Process::result('hotwire-starter-kit'),
-        'docker inspect hotwire-laravel.test-1 --format {{index .Config.Labels "com.docker.compose.project.working_dir"}}' => Process::result('/home/tony/Code/hotwire-starter-kit'),
+        'docker inspect hotwire-laravel.test-1 --format*' => Process::result(
+            "hotwire-starter-kit\n/home/tony/Code/hotwire-starter-kit",
+        ),
     ]);
 
     $this->artisan('uninstall', ['--force' => true])

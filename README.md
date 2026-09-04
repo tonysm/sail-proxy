@@ -109,6 +109,57 @@ sail-proxy register my-container myapp.localhost 80
 
 Stop serving an app. Prompts with the registered apps if you don't name one.
 
+### `sail-proxy status`
+
+Show whether the proxy is up, everything it is currently routing, and where each app runs
+from on your machine.
+
+```
+  Proxy: on
+
+ ┌──────────────────────┬────────────────────────────────┬────────────────────────────────────────┬─────────┬─────────────────────┐
+ │ Service              │ Host                           │ Target                                 │ State   │ Directory           │
+ ├──────────────────────┼────────────────────────────────┼────────────────────────────────────────┼─────────┼─────────────────────┤
+ │ hotwire-starter-kit  │ hotwire-starter-kit.localhost  │ hotwire-starter-kit-laravel.test-1:80  │ running │ ~/Code/hotwire      │
+ │ livewire-starter-kit │ livewire-starter-kit.localhost │ livewire-starter-kit-laravel.test-1:80 │ gone    │ container not found │
+ └──────────────────────┴────────────────────────────────┴────────────────────────────────────────┴─────────┴─────────────────────┘
+```
+
+The directory comes from the labels Compose writes onto every container it creates, so it is
+the project directory you ran `sail-proxy config` in. A container started outside Compose —
+anything you pointed `register` at, say — carries no such label and shows `-`.
+
+`gone` means the proxy is still routing a hostname to a container that no longer exists;
+kamal-proxy keeps the registration and goes on reporting it as `running`. Run
+`sail-proxy unregister` to clear it out.
+
+Pass `--json` for the same thing as an object, including the two columns the table leaves
+out (`path` and `tls`):
+
+```json
+{
+    "active": true,
+    "projects": [
+        {
+            "service": "myapp",
+            "host": "myapp.localhost",
+            "path": "/",
+            "target": "myapp-laravel.test-1:80",
+            "state": "running",
+            "tls": "no",
+            "container": "myapp-laravel.test-1",
+            "exists": true,
+            "project": "myapp",
+            "dir": "/home/you/Code/myapp"
+        }
+    ]
+}
+```
+
+`state` is what kamal-proxy believes; `exists` is whether the container is actually there.
+A stopped proxy is a status, not a failure: you get `"active": false` with no projects, and
+the command still exits 0. Branch on `active`, not on the exit code.
+
 ## Configuration
 
 Every default can be overridden with an environment variable. These are read from the real environment, not from a `.env` file:
