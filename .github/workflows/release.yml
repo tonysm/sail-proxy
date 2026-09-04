@@ -53,7 +53,7 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:
-          subject-paths: |
+          subject-path: |
             builds/sail-proxy
             checksums.txt
 
