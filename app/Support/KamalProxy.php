@@ -53,14 +53,30 @@ class KamalProxy
 
     /**
      * Point a hostname at a container.
+     *
+     * The proxy only routes to a target once a health check has passed, which
+     * by default is a 200 from /up on the target port. Anything that doesn't
+     * answer there needs a different path or port, as kamal-proxy's own --force
+     * won't help: it stops waiting for the check, but a target that never
+     * passes one is left serving 503s while still listed as running.
+     *
+     * kamal-proxy gives up by itself after --deploy-timeout, so we wait for it
+     * to say so rather than cut it off with a time limit of our own.
      */
-    public function deploy(string $app, string $target, string $host): ProcessResult
-    {
-        return $this->docker->exec($this->container(), [
+    public function deploy(
+        string $app,
+        string $target,
+        string $host,
+        ?string $healthPath = null,
+        ?string $healthPort = null,
+    ): ProcessResult {
+        return $this->docker->execWithoutTimeout($this->container(), [
             'kamal-proxy', 'deploy', $app,
             '--target', $target,
             '--deploy-timeout', config('proxy.deploy_timeout'),
             '--host', $host,
+            ...($healthPath === null ? [] : ['--health-check-path', $healthPath]),
+            ...($healthPort === null ? [] : ['--health-check-port', $healthPort]),
         ]);
     }
 

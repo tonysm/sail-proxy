@@ -16,10 +16,16 @@ class OverrideFile
      * attached to the proxy network, under an alias matching the hostname it
      * is served on so that containers on that network can reach it by name.
      *
+     * Any other service the proxy routes to has to be on that network as well,
+     * and is left off it otherwise: Compose adds the service name as an alias
+     * on every network a service joins, so each one we attach becomes another
+     * short name that projects can collide on.
+     *
      * @param  array<int, string>  $services  every service in the project
      * @param  array<int, string>  $appNetworks  the full network list for the app service
      * @param  array<int, string>  $externalNetworks  networks we declare as external
      * @param  array<string, array<int, string>>  $aliases  aliases to add, keyed by network
+     * @param  array<string, array{networks: array<int, string>, aliases: array<string, array<int, string>>}>  $routedServices  other services to attach, keyed by service
      */
     public function render(
         array $services,
@@ -27,6 +33,7 @@ class OverrideFile
         array $appNetworks,
         array $externalNetworks,
         array $aliases = [],
+        array $routedServices = [],
     ): string {
         $definitions = [];
 
@@ -39,6 +46,11 @@ class OverrideFile
 
             if ($service === $appService) {
                 $definition['networks'] = $this->networks($appNetworks, $aliases);
+            } elseif (isset($routedServices[$service])) {
+                $definition['networks'] = $this->networks(
+                    $routedServices[$service]['networks'],
+                    $routedServices[$service]['aliases'],
+                );
             }
 
             $definitions[$service] = $definition;

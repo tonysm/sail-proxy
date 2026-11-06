@@ -16,7 +16,9 @@ class RegisterCommand extends Command
     protected $signature = 'register
                             {container? : The container to route traffic to}
                             {hostname? : The hostname to serve it on}
-                            {port? : The port the container listens on}';
+                            {port? : The port the container listens on}
+                            {--health-path= : The path that must return a 200 before traffic is routed (default /up)}
+                            {--health-port= : The port to health check, if not the one being routed to}';
 
     /**
      * The description of the command.
@@ -63,7 +65,13 @@ class RegisterCommand extends Command
 
         $app = $this->appName($hostname);
 
-        $result = $proxy->deploy($app, "{$container}:{$port}", $hostname);
+        $result = $proxy->deploy(
+            $app,
+            "{$container}:{$port}",
+            $hostname,
+            $this->option('health-path'),
+            $this->option('health-port'),
+        );
 
         if ($result->failed()) {
             $this->error(trim($result->errorOutput()) ?: 'Failed to register the app with the proxy.');

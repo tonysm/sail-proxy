@@ -95,6 +95,34 @@ class DockerCompose
      */
     public function networksFor(string $service): array
     {
+        $networks = $this->definition($service)['networks'] ?? [];
+
+        return array_values(array_map(strval(...), array_keys($networks)));
+    }
+
+    /**
+     * The ports the given service declares, as seen from inside its container.
+     *
+     * That is the "target" side of a port mapping, and the one the proxy needs:
+     * it reaches the container directly, so whatever port was published on the
+     * host doesn't come into it.
+     *
+     * @return array<int, string>
+     */
+    public function portsFor(string $service): array
+    {
+        $ports = array_column($this->definition($service)['ports'] ?? [], 'target');
+
+        return array_values(array_unique(array_map(strval(...), $ports)));
+    }
+
+    /**
+     * The given service's definition, as compose reports it.
+     *
+     * @return array<string, mixed>
+     */
+    protected function definition(string $service): array
+    {
         $result = $this->inspect(['config', '--format', 'json']);
 
         if ($result->failed()) {
@@ -103,9 +131,7 @@ class DockerCompose
 
         $config = json_decode($result->output(), associative: true);
 
-        $networks = $config['services'][$service]['networks'] ?? [];
-
-        return array_values(array_map(strval(...), array_keys($networks)));
+        return $config['services'][$service] ?? [];
     }
 
     /**

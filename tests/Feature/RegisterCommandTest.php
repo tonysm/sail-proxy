@@ -66,6 +66,39 @@ it('keeps the whole hostname as the app name when it is not a localhost host', f
     assertRanProcess('docker exec sail-proxy kamal-proxy deploy myapp.test *');
 });
 
+it('waits for kamal-proxy to give up instead of timing the deploy out', function () {
+    fakeProcesses(['docker ps*' => Process::result('sail-proxy')]);
+
+    $this->artisan('register', ['container' => 'app', 'hostname' => 'x.localhost', 'port' => '80'])
+        ->assertExitCode(0);
+
+    Process::assertRan(fn ($process): bool => str_contains(processCommand($process), 'kamal-proxy deploy')
+        && $process->timeout === null);
+});
+
+it('leaves the health check to kamal-proxy by default', function () {
+    fakeProcesses(['docker ps*' => Process::result('sail-proxy')]);
+
+    $this->artisan('register', ['container' => 'app', 'hostname' => 'x.localhost', 'port' => '80'])
+        ->assertExitCode(0);
+
+    assertDidntRunProcess('*--health-check*');
+});
+
+it('checks the health of another path and port when told to', function () {
+    fakeProcesses(['docker ps*' => Process::result('sail-proxy')]);
+
+    $this->artisan('register', [
+        'container' => 'app',
+        'hostname' => 'vite.x.localhost',
+        'port' => '5173',
+        '--health-path' => '/ping',
+        '--health-port' => '80',
+    ])->assertExitCode(0);
+
+    assertRanProcess('* --target app:5173 * --host vite.x.localhost --health-check-path /ping --health-check-port 80');
+});
+
 it('asks for a container, hostname and port when they are not given', function () {
     fakeProcesses(['docker ps*' => Process::result("sail-proxy\nweb")]);
 

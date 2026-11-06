@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 
 /**
@@ -79,6 +80,19 @@ it('names the projects whose override file still needs removing', function () {
         ->expectsOutputToContain('hotwire-starter-kit  /home/tony/Code/hotwire-starter-kit/compose.override.yaml')
         ->expectsOutputToContain('A project that is currently stopped could not be detected')
         ->assertExitCode(0);
+});
+
+it('lists a project once however many of its containers are attached', function () {
+    fakeProcesses([
+        ...installed(['blog-laravel.test-1', 'blog-mailpit-1']),
+        'docker inspect blog-* --format*' => Process::result("blog\n/home/tony/Code/blog"),
+    ]);
+
+    Artisan::call('uninstall', ['--force' => true]);
+
+    expect(substr_count(Artisan::output(), '/home/tony/Code/blog/compose.override.yaml'))->toBe(1);
+
+    assertRanProcess('docker network disconnect -f sail-proxy blog-mailpit-1');
 });
 
 it('falls back to the container name when there are no compose labels', function () {
