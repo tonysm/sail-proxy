@@ -131,7 +131,9 @@ class UninstallCommand extends Command
         foreach ($apps as $app) {
             ['name' => $name, 'dir' => $dir] = $docker->composeProject($app);
 
-            $projects[] = $dir
+            // A project can have several containers on the network, when more
+            // than its app service is routed. It still has only the one file.
+            $projects[$dir ?? $app] = $dir
                 ? [$name ?? $app, $dir.'/'.$overrideFile]
                 : [$app, '(not a compose project)'];
         }
@@ -155,5 +157,8 @@ class UninstallCommand extends Command
 
         $this->line('A project that is currently stopped could not be detected; if you');
         $this->line("configured others, remove their {$overrideFile} too.");
+        $this->newLine();
+        $this->line('Those names go with it: if config pointed a .env value at a .internal');
+        $this->line('hostname, set it back to the service name.');
     }
 }

@@ -61,6 +61,50 @@ it('gives the app service network aliases for the hostnames it answers to', func
     YAML);
 });
 
+it('attaches routed services to the proxy network, and only those', function () {
+    $yaml = (new OverrideFile)->render(
+        services: ['laravel.test', 'mailpit', 'mysql'],
+        appService: 'laravel.test',
+        appNetworks: ['sail', 'sail-proxy'],
+        externalNetworks: ['sail-proxy'],
+        routedServices: [
+            'mailpit' => [
+                'networks' => ['sail', 'sail-proxy'],
+                'aliases' => ['sail-proxy' => ['mail.blog.localhost', 'mail.blog.internal']],
+            ],
+        ],
+    );
+
+    expect($yaml)->toBe(<<<'YAML'
+    services:
+      laravel.test:
+        container_name: !reset null
+        network_mode: !reset null
+        ports: !reset []
+        networks:
+          - sail
+          - sail-proxy
+      mailpit:
+        container_name: !reset null
+        network_mode: !reset null
+        ports: !reset []
+        networks:
+          sail: null
+          sail-proxy:
+            aliases:
+              - mail.blog.localhost
+              - mail.blog.internal
+      mysql:
+        container_name: !reset null
+        network_mode: !reset null
+        ports: !reset []
+    networks:
+      sail-proxy:
+        external: true
+
+    YAML);
+});
+
 it('attaches the app to the takeout network and declares it external', function () {
     $yaml = (new OverrideFile)->render(
         services: ['laravel.test'],

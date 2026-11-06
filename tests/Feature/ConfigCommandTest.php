@@ -2,6 +2,7 @@
 
 use App\Support\DockerCompose;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Yaml\Yaml;
 
 beforeEach(function () {
     $this->project = sys_get_temp_dir().'/sail-proxy-test-'.bin2hex(random_bytes(6));
@@ -192,6 +193,7 @@ it('defaults the hostname to the project directory name', function () {
     $this->artisan('config', ['--force' => true])
         ->expectsConfirmation('Register laravel.test with the proxy?', 'yes')
         ->expectsQuestion('Hostname', $expected)
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'no')
         ->assertExitCode(0);
 
     assertRanProcess("* --host {$expected}");
@@ -300,6 +302,339 @@ it('writes no alias when registration is declined', function () {
     expect(file_get_contents($this->project.'/compose.override.yaml'))
         ->toContain("    networks:\n      - sail-proxy")
         ->not->toContain('aliases');
+
+    assertDidntRunProcess('*kamal-proxy deploy*');
+});
+
+/**
+ * A running project with mailpit, and the proxy up, faked to describe itself.
+ */
+function routableProject(array $overrides = []): array
+{
+    $config = ['services' => [
+        'laravel.test' => [
+            'networks' => ['sail' => null],
+            'ports' => [['target' => 80, 'published' => '80'], ['target' => 5173, 'published' => '5173']],
+        ],
+        'mailpit' => [
+            'networks' => ['sail' => null],
+            'ports' => [['target' => 1025, 'published' => '1025'], ['target' => 8025, 'published' => '8025']],
+        ],
+        'mysql' => ['networks' => ['sail' => null]],
+    ]];
+
+    return [
+        'docker compose*config --services' => Process::result("laravel.test\nmailpit\nmysql"),
+        'docker compose*config --format json' => Process::result(json_encode($config)),
+        'docker ps --format*' => Process::result('sail-proxy'),
+        'docker compose ps --format {{.Names}} laravel.test' => Process::result('blog-laravel.test-1'),
+        'docker compose ps --format {{.Names}} mailpit' => Process::result('blog-mailpit-1'),
+        ...$overrides,
+    ];
+}
+
+it('serves another port of the app service on its own hostname', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', ['--force' => true])
+        ->expectsConfirmation('Register laravel.test with the proxy?', 'yes')
+        ->expectsQuestion('Hostname', 'blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'yes')
+        ->expectsChoice('Service', 'laravel.test', ['laravel.test', 'mailpit', 'mysql'])
+        ->expectsQuestion('Port', '5173')
+        ->expectsQuestion('Hostname', 'vite.blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'no')
+        ->assertExitCode(0);
+
+    // Vite isn't usually running yet, so the route is checked by the app's /up.
+    assertRanProcess('docker exec sail-proxy kamal-proxy deploy vite.blog --target blog-laravel.test-1:5173 * --host vite.blog.localhost --health-check-port 80');
+    assertRanProcess('docker exec sail-proxy kamal-proxy deploy blog --target blog-laravel.test-1:80 * --host blog.localhost');
+
+    $override = Yaml::parseFile($this->project.'/compose.override.yaml', Yaml::PARSE_CUSTOM_TAGS);
+
+    expect($override['services']['laravel.test']['networks']['sail-proxy']['aliases'])
+        ->toBe(['blog.localhost', 'blog.internal', 'vite.blog.localhost', 'vite.blog.internal'])
+        ->and($override['services']['mailpit'])->not->toHaveKey('networks');
+});
+
+it('reads the ports a service declares from inside the container', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject());
+
+    $compose = app(DockerCompose::class);
+
+    expect($compose->portsFor('mailpit'))->toBe(['1025', '8025'])
+        ->and($compose->portsFor('mysql'))->toBe([]);
+});
+
+it('makes the user choose when a service declares several ports', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', ['--force' => true])
+        ->expectsConfirmation('Register laravel.test with the proxy?', 'yes')
+        ->expectsQuestion('Hostname', 'blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'yes')
+        ->expectsChoice('Service', 'mailpit', ['laravel.test', 'mailpit', 'mysql'])
+        ->expectsOutputToContain('mailpit declares ports 1025, 8025. Choose the one that serves HTTP.')
+        ->expectsQuestion('Port', null)
+        ->expectsOutputToContain('The port has to be a number.')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'no')
+        ->assertExitCode(0);
+
+    assertDidntRunProcess('*blog-mailpit-1*');
+});
+
+it('attaches another service to the proxy network and registers it', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', ['--force' => true])
+        ->expectsConfirmation('Register laravel.test with the proxy?', 'yes')
+        ->expectsQuestion('Hostname', 'blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'yes')
+        ->expectsChoice('Service', 'mailpit', ['laravel.test', 'mailpit', 'mysql'])
+        ->expectsQuestion('Port', '8025')
+        ->expectsQuestion('Hostname', 'mail.blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'no')
+        ->assertExitCode(0);
+
+    assertRanProcess('docker exec sail-proxy kamal-proxy deploy mail.blog --target blog-mailpit-1:8025 * --host mail.blog.localhost --health-check-path /');
+
+    expect(file_get_contents($this->project.'/compose.override.yaml'))
+        ->toContain("      sail: null\n      sail-proxy:\n        aliases:\n          - mail.blog.localhost\n          - mail.blog.internal");
+});
+
+it('asks again when a hostname is already in use', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', ['--force' => true])
+        ->expectsConfirmation('Register laravel.test with the proxy?', 'yes')
+        ->expectsQuestion('Hostname', 'blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'yes')
+        ->expectsChoice('Service', 'mailpit', ['laravel.test', 'mailpit', 'mysql'])
+        ->expectsQuestion('Port', '8025')
+        ->expectsQuestion('Hostname', 'blog.localhost')
+        ->expectsOutputToContain("Hostname 'blog.localhost' is already in use.")
+        ->expectsQuestion('Hostname', 'mail.blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'no')
+        ->assertExitCode(0);
+
+    assertRanProcess('* --host mail.blog.localhost *');
+});
+
+it('updates .env when the user accepts', function () {
+    touch($this->project.'/compose.yaml');
+    file_put_contents($this->project.'/.env', "MAIL_MAILER=smtp\nMAIL_HOST=mailpit\nMAIL_PORT=1025\n");
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', ['--force' => true])
+        ->expectsConfirmation('Register laravel.test with the proxy?', 'yes')
+        ->expectsQuestion('Hostname', 'blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'yes')
+        ->expectsChoice('Service', 'mailpit', ['laravel.test', 'mailpit', 'mysql'])
+        ->expectsQuestion('Port', '8025')
+        ->expectsQuestion('Hostname', 'mail.blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'no')
+        ->expectsOutputToContain('MAIL_HOST=mailpit  ->  MAIL_HOST=mail.blog.internal')
+        ->expectsConfirmation('Update .env?', 'yes')
+        ->assertExitCode(0);
+
+    expect(file_get_contents($this->project.'/.env'))
+        ->toBe("MAIL_MAILER=smtp\nMAIL_HOST=mail.blog.internal\nMAIL_PORT=1025\n");
+});
+
+it('warns and leaves .env alone when the user declines', function () {
+    touch($this->project.'/compose.yaml');
+    file_put_contents($this->project.'/.env', "MAIL_HOST=mailpit\n");
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', ['--force' => true])
+        ->expectsConfirmation('Register laravel.test with the proxy?', 'yes')
+        ->expectsQuestion('Hostname', 'blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'yes')
+        ->expectsChoice('Service', 'mailpit', ['laravel.test', 'mailpit', 'mysql'])
+        ->expectsQuestion('Port', '8025')
+        ->expectsQuestion('Hostname', 'mail.blog.localhost')
+        ->expectsConfirmation('Serve another service or port on its own hostname?', 'no')
+        ->expectsConfirmation('Update .env?', 'no')
+        ->expectsOutputToContain("mailpit may resolve to another project's container")
+        ->assertExitCode(0);
+
+    expect(file_get_contents($this->project.'/.env'))->toBe("MAIL_HOST=mailpit\n");
+});
+
+it('names the hostname to use when .env does not mention the service', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', ['--force' => true, '--host' => 'blog.localhost', '--route' => ['mailpit:8025:mail.blog.localhost']])
+        ->expectsOutputToContain('If your app calls mailpit directly, use mail.blog.internal rather than mailpit.')
+        ->assertExitCode(0);
+});
+
+it('takes routes from options without asking anything', function () {
+    touch($this->project.'/compose.yaml');
+    file_put_contents($this->project.'/.env', "MAIL_HOST=mailpit\n");
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', [
+        '--force' => true,
+        '--host' => 'blog.localhost',
+        '--route' => ['mailpit:8025:mail.blog.localhost', 'laravel.test:5173:vite.blog.localhost'],
+    ])
+        ->expectsOutputToContain("mailpit may resolve to another project's container")
+        ->assertExitCode(0);
+
+    assertRanProcess('* --target blog-mailpit-1:8025 *');
+    assertRanProcess('* --target blog-laravel.test-1:5173 *');
+
+    // Nothing asked for that file to change, and nobody was there to ask.
+    expect(file_get_contents($this->project.'/.env'))->toBe("MAIL_HOST=mailpit\n");
+});
+
+it('updates .env from options with --update-env', function () {
+    touch($this->project.'/compose.yaml');
+    file_put_contents($this->project.'/.env', "MAIL_HOST=mailpit\n");
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', [
+        '--force' => true,
+        '--host' => 'blog.localhost',
+        '--route' => ['mailpit:8025:mail.blog.localhost'],
+        '--update-env' => true,
+    ])->assertExitCode(0);
+
+    expect(file_get_contents($this->project.'/.env'))->toBe("MAIL_HOST=mail.blog.internal\n");
+});
+
+it('uses a hostname as its own container name when it is not a localhost one', function () {
+    touch($this->project.'/compose.yaml');
+    file_put_contents($this->project.'/.env', "MAIL_HOST=mailpit\n");
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', [
+        '--force' => true,
+        '--host' => 'blog.test',
+        '--route' => ['mailpit:8025:mail.blog.test'],
+        '--update-env' => true,
+    ])->assertExitCode(0);
+
+    expect(file_get_contents($this->project.'/.env'))->toBe("MAIL_HOST=mail.blog.test\n");
+});
+
+it('points .env at one name for a service routed twice', function () {
+    touch($this->project.'/compose.yaml');
+    file_put_contents($this->project.'/.env', "MAIL_HOST=mailpit\n");
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', [
+        '--force' => true,
+        '--host' => 'blog.localhost',
+        '--route' => ['mailpit:8025:mail.blog.localhost', 'mailpit:1025:smtp.blog.localhost'],
+        '--update-env' => true,
+    ])->assertExitCode(0);
+
+    expect(file_get_contents($this->project.'/.env'))->toBe("MAIL_HOST=mail.blog.internal\n");
+
+    expect(file_get_contents($this->project.'/compose.override.yaml'))
+        ->toContain("          - mail.blog.internal\n          - smtp.blog.localhost\n          - smtp.blog.internal");
+});
+
+it('refuses an invalid route before writing anything', function (string $route, string $message) {
+    touch($this->project.'/compose.yaml');
+    file_put_contents($this->project.'/.env', "MAIL_HOST=mailpit\n");
+
+    fakeProcesses(routableProject());
+
+    $this->artisan('config', ['--force' => true, '--host' => 'blog.localhost', '--route' => [$route]])
+        ->expectsOutputToContain($message)
+        ->assertExitCode(1);
+
+    expect(file_exists($this->project.'/compose.override.yaml'))->toBeFalse()
+        ->and(file_get_contents($this->project.'/.env'))->toBe("MAIL_HOST=mailpit\n");
+
+    assertDidntRunProcess('docker compose down');
+})->with([
+    'malformed' => ['mailpit:8025', "Invalid route 'mailpit:8025'"],
+    'port not a number' => ['mailpit:web:mail.blog.localhost', "Invalid route 'mailpit:web:mail.blog.localhost'"],
+    'unknown service' => ['nope:8025:mail.blog.localhost', "Service 'nope' not found"],
+    'hostname taken' => ['mailpit:8025:blog.localhost', "Hostname 'blog.localhost' is used more than once."],
+]);
+
+it('never asks about routes when --host is given alone', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject());
+
+    // An unexpected question would fail this; the mock has no answer for it.
+    $this->artisan('config', ['--force' => true, '--host' => 'blog.localhost'])->assertExitCode(0);
+
+    assertDidntRunProcess('*--health-check*');
+});
+
+it('tries the remaining routes after one fails, and reports the failure', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject([
+        '*kamal-proxy deploy mail.blog *' => Process::result(errorOutput: 'target failed to become healthy', exitCode: 1),
+    ]));
+
+    $this->artisan('config', [
+        '--force' => true,
+        '--host' => 'blog.localhost',
+        '--route' => ['mailpit:8025:mail.blog.localhost', 'laravel.test:5173:vite.blog.localhost'],
+    ])
+        ->expectsOutputToContain('target failed to become healthy')
+        ->expectsOutputToContain('sail-proxy register blog-mailpit-1 mail.blog.localhost 8025 --health-path=/some/path')
+        ->assertExitCode(1);
+
+    assertRanProcess('* --host vite.blog.localhost *');
+});
+
+it('does not register routes when the app itself failed to register', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject([
+        '*kamal-proxy deploy blog *' => Process::result(errorOutput: 'target failed to become healthy', exitCode: 1),
+    ]));
+
+    $this->artisan('config', [
+        '--force' => true,
+        '--host' => 'blog.localhost',
+        '--route' => ['mailpit:8025:mail.blog.localhost'],
+    ])->assertExitCode(1);
+
+    assertDidntRunProcess('*kamal-proxy deploy mail.blog *');
+});
+
+it('prints how to register routes when the proxy is not running', function () {
+    touch($this->project.'/compose.yaml');
+
+    fakeProcesses(routableProject(['docker ps --format*' => Process::result('')]));
+
+    $this->artisan('config', [
+        '--force' => true,
+        '--host' => 'blog.localhost',
+        '--route' => ['mailpit:8025:mail.blog.localhost', 'laravel.test:5173:vite.blog.localhost'],
+    ])
+        ->expectsOutputToContain('sail-proxy register blog-mailpit-1 mail.blog.localhost 8025 --health-path=/')
+        ->expectsOutputToContain('sail-proxy register blog-laravel.test-1 vite.blog.localhost 5173 --health-port=80')
+        ->assertExitCode(0);
 
     assertDidntRunProcess('*kamal-proxy deploy*');
 });

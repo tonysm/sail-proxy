@@ -35,6 +35,7 @@ Nine commands in `app/Commands/`, each driving thin wrappers in `app/Support/`:
 - `KamalProxy` — `kamal-proxy deploy|remove|list`, run via `docker exec` into the proxy
   container. `services()` parses the `list` table; `apps()` is the service column of it.
 - `OverrideFile` — renders the `compose.override.yaml` that `config` writes.
+- `EnvFile` — finds and rewrites `.env` lines that point at a service by its short name.
 
 `install` creates the shared network and starts the `sail-proxy` (kamal-proxy) container;
 nothing is pinned, so Docker assigns the network a subnet and the proxy an address from its
@@ -74,6 +75,17 @@ env var read from the real environment (not a `.env`).
 - **`config` has to settle the hostname before it writes the override**, because the
   hostname goes in as a network alias. Prompting for it at registration time — after the
   file is written — would be too late.
+- **Routes are settled before the override too**, for the same reason: a routed service's
+  network and aliases go in the file.
+- **Attaching a service to the shared network exposes its short name.** Compose always adds
+  the service name as an alias, so two projects serving `mailpit` both answer to it there, and
+  an app on that network can silently get the other project's. This is why only services the
+  user routes are attached, and why `config` offers to move `.env` onto the `.internal` name.
+- **`kamal-proxy deploy --force` does not skip health checks**, whatever its help says. It only
+  stops waiting: a target that never passes a check serves 503s while `list` reports `running`.
+  Use `--health-check-path` or `--health-check-port` for a target with no `/up`.
+- **`kamal-proxy deploy` must not run under `Process`'s 60s default timeout.** It enforces
+  `--deploy-timeout` itself, 120s by default, so a slow deploy would otherwise throw.
 - **Aliases come in pairs, and the `.localhost` one is inert for libcurl.** libcurl resolves
   any `.localhost` name to `127.0.0.1` itself, so from inside a container that alias is never
   reached -- the request loops back to the caller. `ConfigCommand::containerHostname()` adds a

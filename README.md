@@ -96,7 +96,7 @@ where it is.
 
 Removes everything `install` created: the `sail-proxy` container, the `sail-proxy` network, and the `sail-proxy` volume that holds the proxy's registrations. Asks first unless you pass `--force`.
 
-Any app containers still attached to the network are disconnected so it can be removed. Project override files are left alone — the command lists the projects it found so you can delete their `compose.override.yaml` yourself, since a project that keeps one will fail to start once the network is gone.
+Any app containers still attached to the network are disconnected so it can be removed. Project override files are left alone — the command lists the projects it found so you can delete their `compose.override.yaml` yourself, since a project that keeps one will fail to start once the network is gone. If `config` pointed any `.env` values at `.internal` names, set those back to the service name too, as those names go with the override.
 
 ### `sail-proxy config`
 
@@ -115,10 +115,50 @@ The aliases are what let one project reach another by name: from inside a contai
 | `--takeout` | also attach the app to [Takeout](https://github.com/tighten/takeout)'s network, so its MySQL/Redis/etc. containers are reachable by name |
 | `--host=` | the hostname to serve on, skipping the prompt |
 | `--force` | overwrite an existing `compose.override.yaml` without asking |
+| `--route=` | serve another service or port on its own hostname, as `service:port:hostname` (repeatable) |
+| `--update-env` | with `--route`, point `.env` at the new hostnames without asking |
 
 Give both `--host` and `--force` to run it unattended.
 
 The app service is detected from `APP_SERVICE` in your `.env`, falling back to `laravel.test`.
+
+#### Serving more than the app
+
+After the hostname, `config` asks whether to serve anything else on its own hostname: another service, like Mailpit's dashboard, or another port on the app service, like Vite.
+
+```
+Serve another service or port on its own hostname? yes
+  Service: mailpit
+  mailpit declares ports 1025, 8025. Choose the one that serves HTTP.
+  Port: 8025
+  Hostname [mailpit.blog.localhost]: mail.blog.localhost
+```
+
+To do the same unattended:
+
+```bash
+sail-proxy config --host=blog.localhost --force \
+  --route=mailpit:8025:mail.blog.localhost \
+  --route=laravel.test:5173:vite.blog.localhost \
+  --update-env
+```
+
+The proxy only routes to a target once a health check has passed, so each route gets one that fits it:
+
+- **A port on the app service** is checked through the app's own `/up` on port 80, so it registers even if Vite isn't running yet. Requests return a 502 until it starts.
+- **Any other service** has to return a 200 from `/` on the port you chose, and be running when you register it. If it doesn't, the route fails with an error and `config` prints the command to retry on a path that does return one.
+
+**Other services get a unique name, and your `.env` should use it.** Compose adds a service's name as an alias on every network it joins, so if two projects both serve a Mailpit, `mailpit` on the shared network resolves to both of them. Your app is on that network too, so `MAIL_HOST=mailpit` could send mail to the other project's inbox, with no error to tell you.
+
+To avoid that, the service also answers on its `.internal` name, and `config` offers to update any `.env` line that still uses the short one:
+
+```
+MAIL_HOST=mailpit  ->  MAIL_HOST=mail.blog.internal
+```
+
+It looks for `*_HOST` keys set to the service name and URLs whose host is the service name, and changes only the host, so ports like `MAIL_PORT` stay as they are. With `--route` it only suggests the change unless you pass `--update-env`. A name hardcoded anywhere else needs changing by hand. If your app caches its config, run `php artisan config:clear` afterwards.
+
+**Re-running `config` only keeps the routes you enter that time.** Anything else leaves the network: the proxy returns errors for it, and any `.env` line you updated points at a name that is gone. Enter the route again to bring it back, or run `sail-proxy unregister` and restore the `.env` line to drop it.
 
 ### `sail-proxy register [container] [hostname] [port]`
 
@@ -129,6 +169,20 @@ Unlike `config`, this cannot add network aliases — it only points the proxy at
 ```bash
 sail-proxy register my-container myapp.localhost 80
 ```
+
+The proxy won't route to a container until it returns a 200 from `/up`. For one that doesn't have that path, name a path it does answer on, or a port to check instead of the one being routed to:
+
+| Option | |
+|---|---|
+| `--health-path=` | the path that must return a 200, instead of `/up` |
+| `--health-port=` | the port to check, if not the one being routed to |
+
+```bash
+sail-proxy register blog-mailpit-1 mail.blog.localhost 8025 --health-path=/
+sail-proxy register blog-laravel.test-1 vite.blog.localhost 5173 --health-port=80
+```
+
+A container that isn't on the `sail-proxy` network can't be reached. `config` attaches what it routes to, but `register` doesn't.
 
 ### `sail-proxy unregister [app]`
 

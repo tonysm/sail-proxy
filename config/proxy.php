@@ -7,7 +7,7 @@ return [
     | Docker Network
     |--------------------------------------------------------------------------
     |
-    | The dedicated network that the proxy and every proxied app container
+    | The dedicated network that the proxy and every container it routes to
     | share. Docker assigns it a subnet from its own pool; we pin nothing, so
     | there is nothing here to collide with another network or a VPN route.
     |

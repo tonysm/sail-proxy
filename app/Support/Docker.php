@@ -28,6 +28,14 @@ class Docker
     }
 
     /**
+     * Run a command inside a running container that enforces its own time limit.
+     */
+    public function execWithoutTimeout(string $container, array $args): ProcessResult
+    {
+        return Process::forever()->run(['docker', 'exec', $container, ...$args]);
+    }
+
+    /**
      * Determine if the given container is currently running.
      */
     public function isRunning(string $name): bool
