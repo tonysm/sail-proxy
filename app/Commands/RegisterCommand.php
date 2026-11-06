@@ -16,7 +16,7 @@ class RegisterCommand extends Command
     protected $signature = 'register
                             {container? : The container to route traffic to}
                             {hostname? : The hostname to serve it on}
-                            {port=80 : The port the container listens on}';
+                            {port? : The port the container listens on}';
 
     /**
      * The description of the command.
@@ -59,7 +59,7 @@ class RegisterCommand extends Command
             return self::FAILURE;
         }
 
-        $port = $this->argument('port') ?: '80';
+        $port = $this->argument('port') ?: $this->ask('Port', '80');
 
         $app = $this->appName($hostname);
 
